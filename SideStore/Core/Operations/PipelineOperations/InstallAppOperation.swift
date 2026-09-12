@@ -134,8 +134,12 @@ final class InstallAppOperation: BasePipelineOperation<InstallAppOperationContex
             }
             
             // This preserves our data in a serilized format that will be restored at boot onyl if installtion actually completed indicated by embedded provision uuid being different.
+            // zh-patch: 自重签检测不依赖来源关联 (storeApp 可能为 nil: 来源刷新失败/被移除时)
+            // 只要安装的是本机运行的 LiveContainer 自身, 就按自重签处理 (自动回主屏完成重装)
             let isSelfReinstall = !isDifferentSideStore &&
-                                   installedApp.storeApp?.bundleIdentifier.range(of: Bundle.Info.appbundleIdentifier) != nil
+                                   (installedApp.storeApp?.bundleIdentifier.range(of: Bundle.Info.appbundleIdentifier) != nil ||
+                                    installedApp.bundleIdentifier == StoreApp.altstoreAppID ||
+                                    installedApp.bundleIdentifier.hasPrefix(StoreApp.altstoreAppID + "."))
             if isSelfReinstall {
                 if let _ = provisioningProfiles[self.context.targetBundleIdentifier],
                    let appGroup = Bundle.main.altstoreAppGroup,
