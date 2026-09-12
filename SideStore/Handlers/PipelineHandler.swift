@@ -181,7 +181,7 @@ final class PipelineHandler: PipelineExecutionHandler,
                         presenter.present(alertController, animated: true) {
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
                                 // 真正可见 = alert 的 view 已挂到某个 window 上
-                                c(alertController.view.window != nil)
+                                c.resume(returning: alertController.view.window != nil)
                             }
                         }
                     }
