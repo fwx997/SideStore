@@ -62,7 +62,7 @@
                                 <stackView opaque="NO" contentMode="scaleToFill" horizontalCompressionResistancePriority="500" alignment="center" spacing="5" translatesAutoresizingMaskIntoConstraints="NO" id="1Es-pv-zwd">
                                     <rect key="frame" x="0.0" y="0.0" width="147" height="19.5"/>
                                     <subviews>
-                                        <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="400" verticalHuggingPriority="251" horizontalCompressionResistancePriority="500" text="App Name" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" minimumScaleFactor="0.5" translatesAutoresizingMaskIntoConstraints="NO" id="mFe-zJ-eva">
+                                        <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="400" verticalHuggingPriority="251" horizontalCompressionResistancePriority="500" text="应用名称" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" minimumScaleFactor="0.5" translatesAutoresizingMaskIntoConstraints="NO" id="mFe-zJ-eva">
                                             <rect key="frame" x="0.0" y="0.0" width="79" height="19.5"/>
                                             <accessibility key="accessibilityConfiguration" identifier="NameLabel"/>
                                             <fontDescription key="fontDescription" type="system" weight="semibold" pointSize="16"/>
@@ -91,7 +91,7 @@
                                         <rect key="frame" x="0.0" y="0.0" width="62" height="16"/>
                                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                                         <subviews>
-                                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="750" verticalHuggingPriority="750" text="Developer" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" minimumScaleFactor="0.5" translatesAutoresizingMaskIntoConstraints="NO" id="oN5-vu-Dnw">
+                                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="750" verticalHuggingPriority="750" text="开发者" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" minimumScaleFactor="0.5" translatesAutoresizingMaskIntoConstraints="NO" id="oN5-vu-Dnw">
                                                 <rect key="frame" x="0.0" y="0.0" width="62" height="16"/>
                                                 <fontDescription key="fontDescription" type="system" pointSize="13"/>
                                                 <color key="textColor" white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
@@ -124,7 +124,7 @@
                     </subviews>
                     <edgeInsets key="layoutMargins" top="14" left="14" bottom="14" right="12"/>
                 </stackView>
-                <label hidden="YES" opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Label" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="Yd9-jw-faD">
+                <label hidden="YES" opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="标签" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="Yd9-jw-faD">
                     <rect key="frame" x="307" y="12.5" width="27" height="12"/>
                     <fontDescription key="fontDescription" type="system" weight="medium" pointSize="10"/>
                     <color key="textColor" systemColor="secondaryLabelColor"/>

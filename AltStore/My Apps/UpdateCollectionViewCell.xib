@@ -39,7 +39,7 @@
                                                 <stackView opaque="NO" contentMode="scaleToFill" alignment="firstBaseline" translatesAutoresizingMaskIntoConstraints="NO" id="RSR-5W-7tt" userLabel="Release Notes">
                                                     <rect key="frame" x="0.0" y="50" width="343" height="75"/>
                                                     <subviews>
-                                                        <textView clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="scaleToFill" scrollEnabled="NO" editable="NO" text="Version Notes" textAlignment="natural" selectable="NO" translatesAutoresizingMaskIntoConstraints="NO" id="rNs-2O-k3V" customClass="CollapsingMarkdownView" customModule="SideStore" customModuleProvider="target">
+                                                        <textView clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="scaleToFill" scrollEnabled="NO" editable="NO" text="版本说明" textAlignment="natural" selectable="NO" translatesAutoresizingMaskIntoConstraints="NO" id="rNs-2O-k3V" customClass="CollapsingMarkdownView" customModule="SideStore" customModuleProvider="target">
                                                             <rect key="frame" x="15" y="0.0" width="313" height="26"/>
                                                             <color key="textColor" systemColor="secondaryLabelColor"/>
                                                             <fontDescription key="fontDescription" type="system" pointSize="13"/>

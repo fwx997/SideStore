@@ -14,7 +14,7 @@
         <scene sceneID="QxB-Dd-1xC">
             <objects>
                 <navigationController automaticallyAdjustsScrollViewInsets="NO" id="7We-99-yEv" customClass="ForwardingNavigationController" customModule="SideStore" customModuleProvider="target" sceneMemberID="viewController">
-                    <tabBarItem key="tabBarItem" title="Sources" image="Sources" id="xPv-dc-X4v"/>
+                    <tabBarItem key="tabBarItem" title="来源" image="Sources" id="xPv-dc-X4v"/>
                     <toolbarItems/>
                     <simulatedTabBarMetrics key="simulatedBottomBarMetrics"/>
                     <navigationBar key="navigationBar" contentMode="scaleToFill" insetsLayoutMarginsFromSafeArea="NO" largeTitles="YES" id="xWh-1U-u0q" customClass="NavigationBar" customModule="SideStore" customModuleProvider="target">
@@ -50,7 +50,7 @@
                             <outlet property="delegate" destination="Nhf-Gw-Ukx" id="rW6-a2-seQ"/>
                         </connections>
                     </collectionView>
-                    <navigationItem key="navigationItem" title="All Apps" id="rUb-ON-AON"/>
+                    <navigationItem key="navigationItem" title="全部应用" id="rUb-ON-AON"/>
                 </collectionViewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="ih5-9R-QX7" userLabel="First Responder" sceneMemberID="firstResponder"/>
             </objects>
@@ -139,7 +139,7 @@
                             <outlet property="delegate" destination="MVH-oB-c8m" id="fcy-SK-PkD"/>
                         </connections>
                     </collectionView>
-                    <navigationItem key="navigationItem" title="All News" id="FGB-cd-Vkd"/>
+                    <navigationItem key="navigationItem" title="全部资讯" id="FGB-cd-Vkd"/>
                 </collectionViewController>
                 <placeholder placeholderIdentifier="IBFirstResponder" id="7f5-vn-JrS" userLabel="First Responder" sceneMemberID="firstResponder"/>
             </objects>
@@ -148,7 +148,7 @@
         <!--Sources-->
         <scene sceneID="w2v-ek-6dY">
             <objects>
-                <collectionViewController storyboardIdentifier="sourcesViewController" title="Sources" id="Wm7-1O-FkD" customClass="SourcesViewController" customModule="SideStore" customModuleProvider="target" sceneMemberID="viewController">
+                <collectionViewController storyboardIdentifier="sourcesViewController" title="来源" id="Wm7-1O-FkD" customClass="SourcesViewController" customModule="SideStore" customModuleProvider="target" sceneMemberID="viewController">
                     <collectionView key="view" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="scaleToFill" preservesSuperviewLayoutMargins="YES" alwaysBounceVertical="YES" dataMode="prototypes" id="VJr-nx-7Vh">
                         <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
@@ -174,7 +174,7 @@
                             <outlet property="delegate" destination="Wm7-1O-FkD" id="UvE-ta-8ir"/>
                         </connections>
                     </collectionView>
-                    <navigationItem key="navigationItem" title="Sources" largeTitleDisplayMode="always" id="Noh-fc-wch">
+                    <navigationItem key="navigationItem" title="来源" largeTitleDisplayMode="always" id="Noh-fc-wch">
                         <barButtonItem key="leftBarButtonItem" systemItem="add" id="y96-Ve-1gW">
                             <connections>
                                 <segue destination="i15-Jk-F75" kind="presentation" identifier="addSource" id="FGe-k6-H7c"/>
@@ -218,7 +218,7 @@
                             <outlet property="delegate" destination="bbz-wy-kaK" id="RRO-hx-gbl"/>
                         </connections>
                     </collectionView>
-                    <navigationItem key="navigationItem" title="Add Source" id="v46-dC-g7e">
+                    <navigationItem key="navigationItem" title="添加来源" id="v46-dC-g7e">
                         <barButtonItem key="leftBarButtonItem" systemItem="cancel" id="ozl-rj-JhC">
                             <connections>
                                 <segue destination="qr8-ss-Ghz" kind="unwind" unwindAction="unwindFromAddSource:" id="Pba-Kh-qfH"/>
