@@ -330,11 +330,10 @@ public class DatabaseManager: @unchecked Sendable
             
             let fileURL = installedApp.fileURL
             
-            #if DEBUG
+            // zh-patch: always replace the cached App.app with the real running bundle.
+            // The old version-match check never detected the stale cached OFFICIAL English bundle
+            // (its recorded version equaled the installed one), causing resign to install English.
             let replaceCachedApp = true
-            #else
-            let replaceCachedApp = !FileManager.default.fileExists(atPath: fileURL.path) || installedApp.version != localAppBundle.version || installedApp.buildVersion != localAppBundle.buildVersion
-            #endif
             
             if replaceCachedApp
             {

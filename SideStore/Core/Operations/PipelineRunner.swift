@@ -289,28 +289,7 @@ final class PipelineRunner: Sendable
         if case .resign(_,  let mode)     = operation { context.alternateIconMode       = mode }
         
         if let app = operation.app as? InstalledApp {
-            // zh-patch v4: self-app (LiveContainer+SideStore) 的 resign/refresh/换图标重装,
-            // 必须使用"正在运行的 LC 本体"作为输入包。
-            // InstalledApp.fileURL 指向 AppGroup 缓存的 App.app —— 那是首次安装时的旧官方英文包,
-            // 用它重签/重装会把汉化覆盖成英文!
-            var appBundleURL = app.fileURL
-            if app.bundleIdentifier == StoreApp.altstoreAppID {
-                let mainURL = Bundle.main.bundleURL
-                var candidate: URL? = nil
-                if mainURL.lastPathComponent == "SideStoreApp.framework" {
-                    // SideStore 活进程: Bundle.main = .../LiveContainer.app/Frameworks/SideStoreApp.framework
-                    candidate = mainURL.deletingLastPathComponent().deletingLastPathComponent()
-                } else if mainURL.lastPathComponent == "LiveContainer.app" {
-                    // 内嵌 UI 模式: Bundle.main 即 LiveContainer.app 本体
-                    candidate = mainURL
-                }
-                if let candidate,
-                   FileManager.default.fileExists(atPath: candidate.appendingPathComponent("Info.plist").path),
-                   ALTApplication(fileURL: candidate) != nil {
-                    appBundleURL = candidate
-                }
-            }
-            context.targetAppBundle = ALTApplication(fileURL: appBundleURL)
+            context.targetAppBundle = ALTApplication(fileURL: app.fileURL)
             context.useMainProfile = app.useMainProfile
             context.customBundleIdentifier = app.customBundleIdentifier
             context.installedApp = app
