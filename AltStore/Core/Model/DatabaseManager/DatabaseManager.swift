@@ -358,9 +358,9 @@ public class DatabaseManager: @unchecked Sendable
 
                 do
                 {
+                    // 注意: 不能预创建目录, 否则 copyItem 会报 516 (同名已存在)
                     let temporaryFileURL = FileManager.default.temporaryDirectory
                         .appendingPathComponent(UUID().uuidString + ".app")
-                    try FileManager.default.createDirectory(at: temporaryFileURL, withIntermediateDirectories: false)
                     do
                     {
                         try FileManager.default.copyItem(at: bundleURL, to: temporaryFileURL)
