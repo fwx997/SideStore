@@ -399,6 +399,16 @@ final class InstallAppOperation: BasePipelineOperation<InstallAppOperationContex
             
             await self.suspendToHomeScreen()
 
+            // zh-patch: 私有 suspend 调用在 LC 内嵌环境/新 iOS 上可能静默无效。
+            // 3 秒后若仍在前台, 弹出官方"完成刷新"提示框, 引导用户回主屏完成重装 (避免无声卡住)
+            do {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                if await handler.isAppInForeground() {
+                    self.debugLog("[InstallAppOperation] zh-patch: still in foreground after suspend attempt, prompting user to go home")
+                    await handler.requestBackgroundSuspension()
+                }
+            }
+
             // #if !os(tvOS)
             // let settings = await UNUserNotificationCenter.current().notificationSettings()
             // switch settings.authorizationStatus {
