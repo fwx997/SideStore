@@ -363,7 +363,7 @@ struct ConnectionConfigView: View {
         )
 
         return HStack {
-            Text(LocalizedStringKey(label))
+            Text(label)
                 .foregroundColor(editable ? .primary : .gray)
             Spacer()
             TextField(label, text: proxy)
