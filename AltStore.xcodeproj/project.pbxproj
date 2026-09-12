@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		08165735D602FDDB89D37F13 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 507FF17E2F6DBA79DEC60340 /* Localizable.strings */; };
 		A84596F62F7DC4C90000B8CD /* SideStore.conf in Resources */ = {isa = PBXBuildFile; fileRef = A84596F52F7DC4C90000B8CD /* SideStore.conf */; };
 		A87939D3303A89CA004D9227 /* Minimuxer in Frameworks */ = {isa = PBXBuildFile; productRef = A87939D2303A89CA004D9227 /* Minimuxer */; };
 		A8C37029302DA7F30010213A /* MarkdownKit in Frameworks */ = {isa = PBXBuildFile; platformFilter = ios; productRef = A8C37028302DA7F30010213A /* MarkdownKit */; };
@@ -60,6 +61,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		B0224095A1B22F65E59F4467 /* Localizable.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = Localizable.strings; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		A84596F12F7DC4C90000B8CD /* .gitignore */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitignore; sourceTree = "<group>"; };
 		A84596F22F7DC4C90000B8CD /* .gitmodules */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitmodules; sourceTree = "<group>"; };
 		A84596F32F7DC4C90000B8CD /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
@@ -261,6 +263,7 @@
 		BFD247612284B9A500981D42 = {
 			isa = PBXGroup;
 			children = (
+				507FF17E2F6DBA79DEC60340 /* Localizable.strings */,
 				A8EEC8412F4B146A00F2436D /* AltStore */,
 				A8EEC3B92F4B0EFC00F2436D /* AltWidget */,
 				A8EEC3482F4B0D8600F2436D /* Shared */,
@@ -435,6 +438,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				08165735D602FDDB89D37F13 /* Localizable.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
