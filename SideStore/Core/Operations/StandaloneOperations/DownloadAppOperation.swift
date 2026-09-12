@@ -55,20 +55,18 @@ final class DownloadAppOperation: BasePipelineOperation<InstallAppOperationConte
         if let error = self.context.error { throw error }
         
 
-        // zh-patch v3: SideStore/LC 自重签时, 使用"正在运行的 LC 本体"作为输入包。
+        // zh-patch v3b: SideStore/LC 自重签时, 使用"正在运行的 LC 本体"作为输入包。
         // 注意: 绝不能使用 InstalledApp.fileURL (AppGroup 缓存目录里的 App.app) ——
         // 那里缓存的是首次安装时的旧官方英文包, 会导致重签后变回英文!
         do {
             var candidates: [URL] = []
-            // 1) lcMainBundle = 正在运行的 LiveContainer.app (LC 进程/内嵌进程均由 LCBootstrap 设置)
-            let lcBundle = UserDefaults.lcMainBundle()
-            if lcBundle != nil {
-                candidates.append(lcBundle!.bundleURL)
-            }
-            // 2) SideStore 活进程: Bundle.main = SideStoreApp.framework, 其上两级就是 LiveContainer.app
             let mainURL = Bundle.main.bundleURL
             if mainURL.lastPathComponent == "SideStoreApp.framework" {
+                // SideStore 活进程模式: Bundle.main = .../LiveContainer.app/Frameworks/SideStoreApp.framework
                 candidates.append(mainURL.deletingLastPathComponent().deletingLastPathComponent())
+            } else if mainURL.lastPathComponent.hasSuffix(".app") {
+                // 内嵌 UI 模式: Bundle.main 即 LiveContainer.app 本体
+                candidates.append(mainURL)
             }
             for candidateURL in candidates {
                 guard FileManager.default.fileExists(atPath: candidateURL.appendingPathComponent("Info.plist").path),
