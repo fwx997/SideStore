@@ -343,45 +343,62 @@ public class DatabaseManager: @unchecked Sendable
                 let extensionBundleIDMap = installedExtensions.reduce(into: [String: String]()) { dict, ext in
                     dict[ext.resignedBundleIdentifier] = ext.bundleIdentifier
                 }
-                
-                Task.detached(priority: .background) {
-                    func update(_ bundle: Bundle, bundleID: String) throws
+
+                // zh-patch: run the cache sync INLINE (awaited) instead of a detached fire-and-forget task.
+                // The detached version raced with an immediately-started resign (reading a half-replaced cache → hang).
+                // The final replacement is atomic (replaceItemAt) so readers never see a partial bundle.
+                func update(_ bundle: Bundle, bundleID: String) throws
+                {
+                    let infoPlistURL = bundle.bundleURL.appendingPathComponent("Info.plist")
+
+                    guard var infoDictionary = bundle.completeInfoDictionary else { throw ALTError(.missingInfoPlist) }
+                    infoDictionary[kCFBundleIdentifierKey as String] = bundleID
+                    try (infoDictionary as NSDictionary).write(to: infoPlistURL)
+                }
+
+                do
+                {
+                    let temporaryFileURL = FileManager.default.temporaryDirectory
+                        .appendingPathComponent(UUID().uuidString + ".app")
+                    try FileManager.default.createDirectory(at: temporaryFileURL, withIntermediateDirectories: false)
+                    do
                     {
-                        let infoPlistURL = bundle.bundleURL.appendingPathComponent("Info.plist")
-                        
-                        guard var infoDictionary = bundle.completeInfoDictionary else { throw ALTError(.missingInfoPlist) }
-                        infoDictionary[kCFBundleIdentifierKey as String] = bundleID
-                        try (infoDictionary as NSDictionary).write(to: infoPlistURL)
-                    }
-                    
-                    FileManager.default.prepareTemporaryURL() { (temporaryFileURL) in
-                        do
+                        try FileManager.default.copyItem(at: bundleURL, to: temporaryFileURL)
+
+                        guard let appBundle = Bundle(url: temporaryFileURL) else { throw ALTError(.invalidApp) }
+                        try update(appBundle, bundleID: altstoreAppID)
+
+                        if let tempAppBundle = ALTApplication(fileURL: temporaryFileURL)
                         {
-                            try FileManager.default.copyItem(at: bundleURL, to: temporaryFileURL)
-                            
-                            guard let appBundle = Bundle(url: temporaryFileURL) else { throw ALTError(.invalidApp) }
-                            try update(appBundle, bundleID: altstoreAppID)
-                            
-                            if let tempAppBundle = ALTApplication(fileURL: temporaryFileURL)
+                            for appExtension in tempAppBundle.appExtensions
                             {
-                                for appExtension in tempAppBundle.appExtensions
-                                {
-                                    guard let extensionBundle = Bundle(url: appExtension.fileURL) else { throw ALTError(.invalidApp) }
-                                    guard let originalBundleID = extensionBundleIDMap[appExtension.bundleIdentifier] else { throw ALTError(.invalidApp) }
-                                    try update(extensionBundle, bundleID: originalBundleID)
-                                }
+                                guard let extensionBundle = Bundle(url: appExtension.fileURL) else { throw ALTError(.invalidApp) }
+                                guard let originalBundleID = extensionBundleIDMap[appExtension.bundleIdentifier] else { throw ALTError(.invalidApp) }
+                                try update(extensionBundle, bundleID: originalBundleID)
                             }
-                            
-                            try FileManager.default.copyItem(at: temporaryFileURL, to: fileURL, shouldReplace: true)
                         }
-                        catch
+
+                        if FileManager.default.fileExists(atPath: fileURL.path)
                         {
-                            debugLog("Failed to copy SideStore app bundle to its proper location. \(error)")
+                            _ = try FileManager.default.replaceItemAt(fileURL, withItemAt: temporaryFileURL)
                         }
+                        else
+                        {
+                            try FileManager.default.copyItem(at: temporaryFileURL, to: fileURL)
+                        }
+                    }
+                    catch
+                    {
+                        try? FileManager.default.removeItem(at: temporaryFileURL)
+                        throw error
                     }
                 }
+                catch
+                {
+                    debugLog("Failed to copy SideStore app bundle to its proper location. \(error)")
+                }
             }
-            
+
             let cachedRefreshedDate = installedApp.refreshedDate
             let cachedExpirationDate = installedApp.expirationDate
                         
