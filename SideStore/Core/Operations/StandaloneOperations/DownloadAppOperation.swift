@@ -54,6 +54,24 @@ final class DownloadAppOperation: BasePipelineOperation<InstallAppOperationConte
         if self.isCancelled { throw OperationError.cancelled }
         if let error = self.context.error { throw error }
         
+
+        // zh-patch: SideStore/LC 自重签时直接使用设备上已安装的包,
+        // 避免从源下载英文官方包覆盖汉化资源 (数据库中残留的来源条目不再影响重签)
+        do {
+            var installedInfo: (bundleID: String, fileURL: URL)? = nil
+            DatabaseManager.shared.viewContext.performAndWait {
+                if let installedAltStore = InstalledApp.fetchAltStore(in: DatabaseManager.shared.viewContext) {
+                    installedInfo = (installedAltStore.bundleIdentifier, installedAltStore.fileURL)
+                }
+            }
+            if let info = installedInfo,
+               bundleIdentifier == info.bundleID || bundleIdentifier.hasPrefix(info.bundleID + "."),
+               let altApp = ALTApplication(fileURL: info.fileURL) {
+                debugLog("[DownloadAppOperation] zh-patch: self-resign detected, using installed bundle at \(info.fileURL.path)")
+                return altApp
+            }
+        }
+
         debugLog("[DownloadAppOperation] Downloading App: \(self.bundleIdentifier)")
 
         do {
