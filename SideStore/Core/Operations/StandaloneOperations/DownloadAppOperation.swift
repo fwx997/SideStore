@@ -55,21 +55,30 @@ final class DownloadAppOperation: BasePipelineOperation<InstallAppOperationConte
         if let error = self.context.error { throw error }
         
 
-        // zh-patch: SideStore/LC 自重签时直接使用设备上已安装的包,
-        // 避免从源下载英文官方包覆盖汉化资源 (数据库中残留的来源条目不再影响重签)
+        // zh-patch v3: SideStore/LC 自重签时, 使用"正在运行的 LC 本体"作为输入包。
+        // 注意: 绝不能使用 InstalledApp.fileURL (AppGroup 缓存目录里的 App.app) ——
+        // 那里缓存的是首次安装时的旧官方英文包, 会导致重签后变回英文!
         do {
-            var installedInfo: (bundleID: String, fileURL: URL)? = nil
-            DatabaseManager.shared.viewContext.performAndWait {
-                if let installedAltStore = InstalledApp.fetchAltStore(in: DatabaseManager.shared.viewContext) {
-                    installedInfo = (installedAltStore.bundleIdentifier, installedAltStore.fileURL)
-                }
+            var candidates: [URL] = []
+            // 1) lcMainBundle = 正在运行的 LiveContainer.app (LC 进程/内嵌进程均由 LCBootstrap 设置)
+            let lcBundle = UserDefaults.lcMainBundle()
+            if lcBundle != nil {
+                candidates.append(lcBundle!.bundleURL)
             }
-            if let info = installedInfo,
-               bundleIdentifier == info.bundleID || bundleIdentifier.hasPrefix(info.bundleID + "."),
-               let altApp = ALTApplication(fileURL: info.fileURL) {
-                debugLog("[DownloadAppOperation] zh-patch: self-resign detected, using installed bundle at \(info.fileURL.path)")
+            // 2) SideStore 活进程: Bundle.main = SideStoreApp.framework, 其上两级就是 LiveContainer.app
+            let mainURL = Bundle.main.bundleURL
+            if mainURL.lastPathComponent == "SideStoreApp.framework" {
+                candidates.append(mainURL.deletingLastPathComponent().deletingLastPathComponent())
+            }
+            for candidateURL in candidates {
+                guard FileManager.default.fileExists(atPath: candidateURL.appendingPathComponent("Info.plist").path),
+                      let altApp = ALTApplication(fileURL: candidateURL),
+                      altApp.bundleIdentifier == StoreApp.altstoreAppID
+                else { continue }
+                debugLog("[DownloadAppOperation] zh-patch v3: self-resign using real running bundle at \(candidateURL.path)")
                 return altApp
             }
+            debugLog("[DownloadAppOperation] zh-patch v3: real bundle not found, fallback to source download")
         }
 
         debugLog("[DownloadAppOperation] Downloading App: \(self.bundleIdentifier)")
