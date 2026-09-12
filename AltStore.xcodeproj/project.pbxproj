@@ -72,17 +72,17 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		F7E30C2B21174B622A3A266C /* AboutPatreonHeaderView.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = "AboutPatreonHeaderView.strings"; path = "zh-Hans.lproj/AboutPatreonHeaderView.strings"; sourceTree = "<group>"; };
-		796D4360EDFFB0FBC2FE1FF7 /* AppBannerView.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = "AppBannerView.strings"; path = "zh-Hans.lproj/AppBannerView.strings"; sourceTree = "<group>"; };
-		48751A744D868AFF4ACAF0CB /* Authentication.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = "Authentication.strings"; path = "zh-Hans.lproj/Authentication.strings"; sourceTree = "<group>"; };
-		7D516EC48CA4D86AF80DEE0F /* InstalledAppsCollectionHeaderView.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = "InstalledAppsCollectionHeaderView.strings"; path = "zh-Hans.lproj/InstalledAppsCollectionHeaderView.strings"; sourceTree = "<group>"; };
-		B42195AC6B8C7EA9EC6A3EB0 /* Main.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = "Main.strings"; path = "zh-Hans.lproj/Main.strings"; sourceTree = "<group>"; };
-		32BD59F0E8BD48E84DB7AD30 /* NewsCollectionViewCell.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = "NewsCollectionViewCell.strings"; path = "zh-Hans.lproj/NewsCollectionViewCell.strings"; sourceTree = "<group>"; };
-		634F2756D8D71318DFACF461 /* Settings.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = "Settings.strings"; path = "zh-Hans.lproj/Settings.strings"; sourceTree = "<group>"; };
-		1017C3AEBABD763AEE68507D /* SettingsHeaderFooterView.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = "SettingsHeaderFooterView.strings"; path = "zh-Hans.lproj/SettingsHeaderFooterView.strings"; sourceTree = "<group>"; };
-		6BCB5F4D7D68A71119D70E5D /* SourceHeaderView.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = "SourceHeaderView.strings"; path = "zh-Hans.lproj/SourceHeaderView.strings"; sourceTree = "<group>"; };
-		47AEB24B0AD64B95E0D7E1C2 /* Sources.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = "Sources.strings"; path = "zh-Hans.lproj/Sources.strings"; sourceTree = "<group>"; };
-		0C6DA8A971B17870FA4B8B78 /* UpdateCollectionViewCell.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = "UpdateCollectionViewCell.strings"; path = "zh-Hans.lproj/UpdateCollectionViewCell.strings"; sourceTree = "<group>"; };
+		F7E30C2B21174B622A3A266C /* AboutPatreonHeaderView.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = "AboutPatreonHeaderView.strings"; path = "AltStore/zh-Hans.lproj/AboutPatreonHeaderView.strings"; sourceTree = "<group>"; };
+		796D4360EDFFB0FBC2FE1FF7 /* AppBannerView.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = "AppBannerView.strings"; path = "AltStore/zh-Hans.lproj/AppBannerView.strings"; sourceTree = "<group>"; };
+		48751A744D868AFF4ACAF0CB /* Authentication.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = "Authentication.strings"; path = "AltStore/zh-Hans.lproj/Authentication.strings"; sourceTree = "<group>"; };
+		7D516EC48CA4D86AF80DEE0F /* InstalledAppsCollectionHeaderView.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = "InstalledAppsCollectionHeaderView.strings"; path = "AltStore/zh-Hans.lproj/InstalledAppsCollectionHeaderView.strings"; sourceTree = "<group>"; };
+		B42195AC6B8C7EA9EC6A3EB0 /* Main.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = "Main.strings"; path = "AltStore/zh-Hans.lproj/Main.strings"; sourceTree = "<group>"; };
+		32BD59F0E8BD48E84DB7AD30 /* NewsCollectionViewCell.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = "NewsCollectionViewCell.strings"; path = "AltStore/zh-Hans.lproj/NewsCollectionViewCell.strings"; sourceTree = "<group>"; };
+		634F2756D8D71318DFACF461 /* Settings.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = "Settings.strings"; path = "AltStore/zh-Hans.lproj/Settings.strings"; sourceTree = "<group>"; };
+		1017C3AEBABD763AEE68507D /* SettingsHeaderFooterView.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = "SettingsHeaderFooterView.strings"; path = "AltStore/zh-Hans.lproj/SettingsHeaderFooterView.strings"; sourceTree = "<group>"; };
+		6BCB5F4D7D68A71119D70E5D /* SourceHeaderView.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = "SourceHeaderView.strings"; path = "AltStore/zh-Hans.lproj/SourceHeaderView.strings"; sourceTree = "<group>"; };
+		47AEB24B0AD64B95E0D7E1C2 /* Sources.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = "Sources.strings"; path = "AltStore/zh-Hans.lproj/Sources.strings"; sourceTree = "<group>"; };
+		0C6DA8A971B17870FA4B8B78 /* UpdateCollectionViewCell.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = "UpdateCollectionViewCell.strings"; path = "AltStore/zh-Hans.lproj/UpdateCollectionViewCell.strings"; sourceTree = "<group>"; };
 		B0224095A1B22F65E59F4467 /* Localizable.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = Localizable.strings; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		A84596F12F7DC4C90000B8CD /* .gitignore */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitignore; sourceTree = "<group>"; };
 		A84596F22F7DC4C90000B8CD /* .gitmodules */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitmodules; sourceTree = "<group>"; };
@@ -286,6 +286,17 @@
 			isa = PBXGroup;
 			children = (
 				507FF17E2F6DBA79DEC60340 /* Localizable.strings */,
+				F7E30C2B21174B622A3A266C /* AboutPatreonHeaderView.strings */,
+				796D4360EDFFB0FBC2FE1FF7 /* AppBannerView.strings */,
+				48751A744D868AFF4ACAF0CB /* Authentication.strings */,
+				7D516EC48CA4D86AF80DEE0F /* InstalledAppsCollectionHeaderView.strings */,
+				B42195AC6B8C7EA9EC6A3EB0 /* Main.strings */,
+				32BD59F0E8BD48E84DB7AD30 /* NewsCollectionViewCell.strings */,
+				634F2756D8D71318DFACF461 /* Settings.strings */,
+				1017C3AEBABD763AEE68507D /* SettingsHeaderFooterView.strings */,
+				6BCB5F4D7D68A71119D70E5D /* SourceHeaderView.strings */,
+				47AEB24B0AD64B95E0D7E1C2 /* Sources.strings */,
+				0C6DA8A971B17870FA4B8B78 /* UpdateCollectionViewCell.strings */,
 				A8EEC8412F4B146A00F2436D /* AltStore */,
 				A8EEC3B92F4B0EFC00F2436D /* AltWidget */,
 				A8EEC3482F4B0D8600F2436D /* Shared */,
