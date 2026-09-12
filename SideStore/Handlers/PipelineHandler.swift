@@ -213,6 +213,19 @@ final class PipelineHandler: PipelineExecutionHandler,
         await MainActor.run {
             _ = UIApplication.shared.perform(#selector(NSXPCConnection.suspend))
         }
+        // zh-patch: 私有 suspend 在 LC 内嵌环境/iOS 27 可能静默无效。
+        // 1秒后若仍在前台, 用公开 API 打开系统设置页强制切后台 (保证自重装能完成)
+        do {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            let stillActive = await MainActor.run { UIApplication.shared.applicationState == .active }
+            if stillActive {
+                await MainActor.run {
+                    if let url = URL(string: UIApplication.openSettingsURLString) {
+                        UIApplication.shared.open(url, options: [:], completionHandler: nil)
+                    }
+                }
+            }
+        }
     }
     
     func isAppInForeground() async -> Bool {
