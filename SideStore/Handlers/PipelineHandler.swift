@@ -97,65 +97,115 @@ final class PipelineHandler: PipelineExecutionHandler,
         guard let presenter = self.activePresenter else {
             return .keepAll(useMainProfile: false)
         }
-        
+
         return try await withCheckedThrowingContinuation { continuation in
-            let firstSentence: String
-            if UserDefaults.standard.activeAppLimitIncludesExtensions {
-                firstSentence = NSLocalizedString("Non-developer Apple IDs are limited to 3 active apps and app extensions.", comment: "")
-            } else {
-                firstSentence = NSLocalizedString("Non-developer Apple IDs are limited to creating 10 App IDs per week.", comment: "")
+            // zh-patch: 在 LC 内嵌环境下, 首次展示的弹窗可能挂到不可见的窗口上 (present 调用成功
+            // 但 alert.view.window == nil), 管线会永远等一个等不到的用户点击 → 卡死无进度。
+            // 修复: 展示后检查可见性, 不可见则自动重建并重试 (最多 8 次); 重试仍失败才报错。
+            var resumed = false
+
+            func finish(_ result: ExtensionRemovalDecision)
+            {
+                guard !resumed else { return }
+                resumed = true
+                continuation.resume(returning: result)
             }
-            
-            let message = firstSentence + " " + NSLocalizedString("Would you like to remove this app's extensions so they don't count towards your limit? There are \(appBundle.appExtensions.count) Extensions", comment: "")
-            
-            let alertController = UIAlertController(title: NSLocalizedString("App Contains Extensions", comment: ""), message: message, preferredStyle: .alert)
-            alertController.addAction(UIAlertAction(title: UIAlertAction.cancel.title, style: UIAlertAction.cancel.style, handler: { _ in
-                continuation.resume(throwing: OperationError.cancelled)
-            }))
-            alertController.addAction(UIAlertAction(title: NSLocalizedString("Keep App Extensions (Use Main Profile)", comment: ""), style: .default) { _ in
-                continuation.resume(returning: .keepAll(useMainProfile: true))
-            })
-            alertController.addAction(UIAlertAction(title: NSLocalizedString("Keep App Extensions (Register App ID for Each Extension)", comment: ""), style: .default) { _ in
-                continuation.resume(returning: .keepAll(useMainProfile: false))
-            })
-            alertController.addAction(UIAlertAction(title: NSLocalizedString("Remove App Extensions", comment: ""), style: .destructive) { _ in
-                continuation.resume(returning: .removeAll)
-            })
-            
-            alertController.addAction(UIAlertAction(title: NSLocalizedString("Choose App Extensions", comment: ""), style: .default) { _ in
-                let popoverContentController = AppExtensionViewHostingController(extensions: appBundle.appExtensions) { selection in
-                    continuation.resume(returning: .removeSelected(Set(selection)))
-                }
-                
-                let suiview = popoverContentController.view!
-                suiview.translatesAutoresizingMaskIntoConstraints = false
-                #if !os(tvOS)
-                popoverContentController.modalPresentationStyle = .popover
-                
-                if let popoverPresentationController = popoverContentController.popoverPresentationController {
-                    popoverPresentationController.sourceView = presenter.view
-                    popoverPresentationController.sourceRect = CGRect(x: 50, y: 50, width: 4, height: 4)
-                    popoverPresentationController.delegate = popoverContentController
-                    presenter.present(popoverContentController, animated: true)
+            func fail(_ error: Error)
+            {
+                guard !resumed else { return }
+                resumed = true
+                continuation.resume(throwing: error)
+            }
+
+            func makeAlert() -> UIAlertController
+            {
+                let firstSentence: String
+                if UserDefaults.standard.activeAppLimitIncludesExtensions {
+                    firstSentence = NSLocalizedString("Non-developer Apple IDs are limited to 3 active apps and app extensions.", comment: "")
                 } else {
-                    continuation.resume(throwing: OperationError.invalidParameters("RemoveAppExtensionsOperation: popoverContentController.popoverPresentationController is nil"))
+                    firstSentence = NSLocalizedString("Non-developer Apple IDs are limited to creating 10 App IDs per week.", comment: "")
                 }
-                #else
-                popoverContentController.modalPresentationStyle = .blurOverFullScreen
-                presenter.present(popoverContentController, animated: true)
-                #endif
-            })
-            
-            presenter.present(alertController, animated: true) {
-                if presenter.presentedViewController == nil && !alertController.isViewLoaded {
-                    let errMsg = "RemoveAppExtensionsOperation: unable to present dialog, view context not available." +
-                                 "\nDid you move to different screen or background after starting the operation?"
-                    continuation.resume(throwing: OperationError.invalidOperationContext(errMsg))
+
+                let message = firstSentence + " " + NSLocalizedString("Would you like to remove this app's extensions so they don't count towards your limit? There are \(appBundle.appExtensions.count) Extensions", comment: "")
+
+                let alertController = UIAlertController(title: NSLocalizedString("App Contains Extensions", comment: ""), message: message, preferredStyle: .alert)
+
+                alertController.addAction(UIAlertAction(title: UIAlertAction.cancel.title, style: UIAlertAction.cancel.style, handler: { _ in
+                    finish(OperationError.cancelled)
+                }))
+                alertController.addAction(UIAlertAction(title: NSLocalizedString("Keep App Extensions (Use Main Profile)", comment: ""), style: .default) { _ in
+                    finish(.keepAll(useMainProfile: true))
+                })
+                alertController.addAction(UIAlertAction(title: NSLocalizedString("Keep App Extensions (Register App ID for Each Extension)", comment: ""), style: .default) { _ in
+                    finish(.keepAll(useMainProfile: false))
+                })
+                alertController.addAction(UIAlertAction(title: NSLocalizedString("Remove App Extensions", comment: ""), style: .destructive) { _ in
+                    finish(.removeAll)
+                })
+
+                alertController.addAction(UIAlertAction(title: NSLocalizedString("Choose App Extensions", comment: ""), style: .default) { _ in
+                    let popoverContentController = AppExtensionViewHostingController(extensions: appBundle.appExtensions) { selection in
+                        finish(.removeSelected(Set(selection)))
+                    }
+
+                    let suiview = popoverContentController.view!
+                    suiview.translatesAutoresizingMaskIntoConstraints = false
+                    #if !os(tvOS)
+                    popoverContentController.modalPresentationStyle = .popover
+
+                    if let popoverPresentationController = popoverContentController.popoverPresentationController {
+                        popoverPresentationController.sourceView = presenter.view
+                        popoverPresentationController.sourceRect = CGRect(x: 50, y: 50, width: 4, height: 4)
+                        popoverPresentationController.delegate = popoverContentController
+                        presenter.present(popoverContentController, animated: true)
+                    } else {
+                        fail(OperationError.invalidParameters("RemoveAppExtensionsOperation: popoverContentController.popoverPresentationController is nil"))
+                    }
+                    #else
+                    popoverContentController.modalPresentationStyle = .blurOverFullScreen
+                    presenter.present(popoverContentController, animated: true)
+                    #endif
+                })
+
+                return alertController
+            }
+
+            Task { @MainActor in
+                var attempts = 0
+                while attempts < 8
+                {
+                    attempts += 1
+                    let alertController = makeAlert()
+
+                    let visible: Bool = await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
+                        presenter.present(alertController, animated: true) {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                                // 真正可见 = alert 的 view 已挂到某个 window 上
+                                c(alertController.view.window != nil)
+                            }
+                        }
+                    }
+
+                    if visible
+                    {
+                        // 展示成功且可见, 等待用户选择 (actions 负责 resume)
+                        break
+                    }
+
+                    debugLog("[PipelineHandler] zh-patch: dialog presentation invisible (attempt \(attempts)/8), retrying...")
+                    try? await Task.sleep(nanoseconds: 600_000_000)
                 }
+
+                if attempts >= 8
+                {
+                    let errMsg = "RemoveAppExtensionsOperation: unable to present dialog after 8 attempts. Did you move to different screen or background after starting the operation?"
+                    fail(OperationError.invalidOperationContext(errMsg))
+                }
+                // 若弹窗可见: 不 resume, 等待用户点击 (actions 调 finish/fail)
             }
         }
     }
-    
+
     @MainActor
     func resolveUnsupportediOSVersion(errorDescription: String, appName: String, compatibleVersion: String) async throws -> Bool {
         guard let presenter = self.activePresenter else {
