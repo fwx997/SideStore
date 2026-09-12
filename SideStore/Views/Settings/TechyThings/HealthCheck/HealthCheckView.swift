@@ -40,7 +40,7 @@ struct HealthCheckView: View {
                             Text("Action Required")
                                 .font(.title2)
                                 .fontWeight(.bold)
-                            Text(err.localizedDescription)
+                            Text(zhError(err.localizedDescription))
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                                 .multilineTextAlignment(.center)
@@ -183,7 +183,7 @@ struct DependencyRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(LocalizedStringKey(title))
                     .font(.body)
-                Text(subtitle)
+                Text(LocalizedStringKey(subtitle))
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -305,4 +305,24 @@ struct InterfaceRow: View {
         }
         .padding(.vertical, 4)
     }
+}
+
+
+// MARK: - minimuxer 错误串中文映射 (Rust 库内嵌英文错误, 无法本地化, 在 UI 层替换)
+private let zhErrorMap: [String: String] = [
+    "No utun interface detected": "未检测到 utun 网络接口",
+    "LocalDevVPN is not connected": "LocalDevVPN 未连接",
+    "is not connected": "未连接",
+    "not connected": "未连接",
+    "Connection down": "连接已断开",
+    "timed out": "已超时",
+    "Pairing file": "配对文件",
+]
+
+private func zhError(_ s: String) -> String {
+    var t = s
+    for (en, zh) in zhErrorMap {
+        t = t.replacingOccurrences(of: en, with: zh)
+    }
+    return t
 }
