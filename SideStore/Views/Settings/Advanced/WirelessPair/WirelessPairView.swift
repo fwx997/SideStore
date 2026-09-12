@@ -252,7 +252,7 @@ struct ConnectionDetailsCard: View {
                     
                     VStack(alignment: .leading, spacing: 0) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(label)
+                            Text(LocalizedStringKey(label))
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                             Text(value)

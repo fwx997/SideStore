@@ -663,7 +663,7 @@ struct SemanticValueRow: View {
     
     var body: some View {
         HStack {
-            Text(label)
+            Text(LocalizedStringKey(label))
                 .font(.subheadline)
                 .foregroundColor(.secondary)
             Spacer()

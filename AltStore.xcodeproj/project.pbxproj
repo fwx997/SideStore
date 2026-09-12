@@ -7,6 +7,17 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		6C3625C3D684EBDC00A388C8 /* AboutPatreonHeaderView.strings in Resources */ = {isa = PBXBuildFile; fileRef = F7E30C2B21174B622A3A266C /* AboutPatreonHeaderView.strings */; };
+		B5257BE9C6F0FB4503A719E1 /* AppBannerView.strings in Resources */ = {isa = PBXBuildFile; fileRef = 796D4360EDFFB0FBC2FE1FF7 /* AppBannerView.strings */; };
+		1FB0D8152741CF54A57ED04B /* Authentication.strings in Resources */ = {isa = PBXBuildFile; fileRef = 48751A744D868AFF4ACAF0CB /* Authentication.strings */; };
+		F96B97C23350950852F957E8 /* InstalledAppsCollectionHeaderView.strings in Resources */ = {isa = PBXBuildFile; fileRef = 7D516EC48CA4D86AF80DEE0F /* InstalledAppsCollectionHeaderView.strings */; };
+		37E4F364D78E31787BA29769 /* Main.strings in Resources */ = {isa = PBXBuildFile; fileRef = B42195AC6B8C7EA9EC6A3EB0 /* Main.strings */; };
+		AFC4558B51933D78B099346D /* NewsCollectionViewCell.strings in Resources */ = {isa = PBXBuildFile; fileRef = 32BD59F0E8BD48E84DB7AD30 /* NewsCollectionViewCell.strings */; };
+		6CFE029A3C35516E41A491DA /* Settings.strings in Resources */ = {isa = PBXBuildFile; fileRef = 634F2756D8D71318DFACF461 /* Settings.strings */; };
+		90A3BF5EBD108D61E3EF0D0C /* SettingsHeaderFooterView.strings in Resources */ = {isa = PBXBuildFile; fileRef = 1017C3AEBABD763AEE68507D /* SettingsHeaderFooterView.strings */; };
+		440A546942AB3ADF4121221B /* SourceHeaderView.strings in Resources */ = {isa = PBXBuildFile; fileRef = 6BCB5F4D7D68A71119D70E5D /* SourceHeaderView.strings */; };
+		8E9048BD31A800A5EDEEDA39 /* Sources.strings in Resources */ = {isa = PBXBuildFile; fileRef = 47AEB24B0AD64B95E0D7E1C2 /* Sources.strings */; };
+		ECEDCB151C1CD81831889F17 /* UpdateCollectionViewCell.strings in Resources */ = {isa = PBXBuildFile; fileRef = 0C6DA8A971B17870FA4B8B78 /* UpdateCollectionViewCell.strings */; };
 		08165735D602FDDB89D37F13 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 507FF17E2F6DBA79DEC60340 /* Localizable.strings */; };
 		A84596F62F7DC4C90000B8CD /* SideStore.conf in Resources */ = {isa = PBXBuildFile; fileRef = A84596F52F7DC4C90000B8CD /* SideStore.conf */; };
 		A87939D3303A89CA004D9227 /* Minimuxer in Frameworks */ = {isa = PBXBuildFile; productRef = A87939D2303A89CA004D9227 /* Minimuxer */; };
@@ -61,6 +72,17 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		F7E30C2B21174B622A3A266C /* AboutPatreonHeaderView.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = "AboutPatreonHeaderView.strings"; path = "zh-Hans.lproj/AboutPatreonHeaderView.strings"; sourceTree = "<group>"; };
+		796D4360EDFFB0FBC2FE1FF7 /* AppBannerView.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = "AppBannerView.strings"; path = "zh-Hans.lproj/AppBannerView.strings"; sourceTree = "<group>"; };
+		48751A744D868AFF4ACAF0CB /* Authentication.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = "Authentication.strings"; path = "zh-Hans.lproj/Authentication.strings"; sourceTree = "<group>"; };
+		7D516EC48CA4D86AF80DEE0F /* InstalledAppsCollectionHeaderView.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = "InstalledAppsCollectionHeaderView.strings"; path = "zh-Hans.lproj/InstalledAppsCollectionHeaderView.strings"; sourceTree = "<group>"; };
+		B42195AC6B8C7EA9EC6A3EB0 /* Main.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = "Main.strings"; path = "zh-Hans.lproj/Main.strings"; sourceTree = "<group>"; };
+		32BD59F0E8BD48E84DB7AD30 /* NewsCollectionViewCell.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = "NewsCollectionViewCell.strings"; path = "zh-Hans.lproj/NewsCollectionViewCell.strings"; sourceTree = "<group>"; };
+		634F2756D8D71318DFACF461 /* Settings.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = "Settings.strings"; path = "zh-Hans.lproj/Settings.strings"; sourceTree = "<group>"; };
+		1017C3AEBABD763AEE68507D /* SettingsHeaderFooterView.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = "SettingsHeaderFooterView.strings"; path = "zh-Hans.lproj/SettingsHeaderFooterView.strings"; sourceTree = "<group>"; };
+		6BCB5F4D7D68A71119D70E5D /* SourceHeaderView.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = "SourceHeaderView.strings"; path = "zh-Hans.lproj/SourceHeaderView.strings"; sourceTree = "<group>"; };
+		47AEB24B0AD64B95E0D7E1C2 /* Sources.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = "Sources.strings"; path = "zh-Hans.lproj/Sources.strings"; sourceTree = "<group>"; };
+		0C6DA8A971B17870FA4B8B78 /* UpdateCollectionViewCell.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = "UpdateCollectionViewCell.strings"; path = "zh-Hans.lproj/UpdateCollectionViewCell.strings"; sourceTree = "<group>"; };
 		B0224095A1B22F65E59F4467 /* Localizable.strings */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.strings; name = Localizable.strings; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		A84596F12F7DC4C90000B8CD /* .gitignore */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitignore; sourceTree = "<group>"; };
 		A84596F22F7DC4C90000B8CD /* .gitmodules */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitmodules; sourceTree = "<group>"; };
@@ -438,6 +460,17 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				6C3625C3D684EBDC00A388C8 /* AboutPatreonHeaderView.strings in Resources */,
+				B5257BE9C6F0FB4503A719E1 /* AppBannerView.strings in Resources */,
+				1FB0D8152741CF54A57ED04B /* Authentication.strings in Resources */,
+				F96B97C23350950852F957E8 /* InstalledAppsCollectionHeaderView.strings in Resources */,
+				37E4F364D78E31787BA29769 /* Main.strings in Resources */,
+				AFC4558B51933D78B099346D /* NewsCollectionViewCell.strings in Resources */,
+				6CFE029A3C35516E41A491DA /* Settings.strings in Resources */,
+				90A3BF5EBD108D61E3EF0D0C /* SettingsHeaderFooterView.strings in Resources */,
+				440A546942AB3ADF4121221B /* SourceHeaderView.strings in Resources */,
+				8E9048BD31A800A5EDEEDA39 /* Sources.strings in Resources */,
+				ECEDCB151C1CD81831889F17 /* UpdateCollectionViewCell.strings in Resources */,
 				08165735D602FDDB89D37F13 /* Localizable.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1033,3 +1066,5 @@
 	};
 	rootObject = BFD247622284B9A500981D42 /* Project object */;
 }
+
+/* <zh-Hans.storyboard.strings> */

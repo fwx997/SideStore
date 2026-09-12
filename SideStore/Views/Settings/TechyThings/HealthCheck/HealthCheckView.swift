@@ -181,7 +181,7 @@ struct DependencyRow: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
-                Text(title)
+                Text(LocalizedStringKey(title))
                     .font(.body)
                 Text(subtitle)
                     .font(.caption)
@@ -217,7 +217,7 @@ struct ConfigRow: View {
     
     var body: some View {
         HStack {
-            Text(label)
+            Text(LocalizedStringKey(label))
             Spacer()
             Text(value ?? "N/A")
                 .foregroundColor(.secondary)

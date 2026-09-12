@@ -160,7 +160,7 @@ struct DeveloperOptionsView: View {
                     #else
                     let title = "TOP SHELF OPTIONS"
                     #endif
-                    Text(title)
+                    Text(LocalizedStringKey(title))
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(Color.white.opacity(0.6))
                         .padding(.horizontal, 16)
@@ -177,7 +177,7 @@ struct DeveloperOptionsView: View {
                                 #else
                                 let title = "Reload Top Shelf"
                                 #endif
-                                Text(title)
+                                Text(LocalizedStringKey(title))
                                     .font(.system(size: 17, weight: .bold))
                                     .foregroundColor(.white)
                                 Spacer()
@@ -199,7 +199,7 @@ struct DeveloperOptionsView: View {
                                 #else
                                 let title = "Rotate Top Shelf Log"
                                 #endif
-                                Text(title)
+                                Text(LocalizedStringKey(title))
                                     .font(.system(size: 17, weight: .bold))
                                     .foregroundColor(.white)
                                 Spacer()
@@ -618,7 +618,7 @@ struct DeveloperOptionsView: View {
     
     private func toggleRow(title: String, isOn: Binding<Bool>) -> some View {
         HStack {
-            Text(title)
+            Text(LocalizedStringKey(title))
                 .font(.system(size: 17, weight: .bold))
                 .foregroundColor(.white)
                 .fixedSize(horizontal: false, vertical: true)

@@ -725,7 +725,7 @@ struct AnisetteDataView: View {
     }
     
     private func sectionHeader(_ title: String) -> some View {
-        Text(title)
+        Text(LocalizedStringKey(title))
             .font(.system(size: 13, weight: .semibold))
             .foregroundColor(Color.white.opacity(0.6))
             .padding(.horizontal, 16)
@@ -741,7 +741,7 @@ struct AnisetteDataView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text(title)
+                Text(LocalizedStringKey(title))
                     .font(.system(size: 15, weight: .bold))
                     .foregroundColor(.white)
                 Spacer()
@@ -786,7 +786,7 @@ struct AnisetteDataView: View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
-                    Text(title)
+                    Text(LocalizedStringKey(title))
                         .font(.system(size: 15, weight: .bold))
                         .foregroundColor(.white)
                     Spacer()

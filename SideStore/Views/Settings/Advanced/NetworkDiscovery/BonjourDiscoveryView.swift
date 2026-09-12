@@ -1120,7 +1120,7 @@ private struct DetailRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
-                Text(label)
+                Text(LocalizedStringKey(label))
                     .font(.caption)
                     .foregroundColor(.secondary)
                 if let tag = tag, !tag.isEmpty {
