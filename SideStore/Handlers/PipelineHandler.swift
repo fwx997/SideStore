@@ -131,7 +131,7 @@ final class PipelineHandler: PipelineExecutionHandler,
                 let alertController = UIAlertController(title: NSLocalizedString("App Contains Extensions", comment: ""), message: message, preferredStyle: .alert)
 
                 alertController.addAction(UIAlertAction(title: UIAlertAction.cancel.title, style: UIAlertAction.cancel.style, handler: { _ in
-                    finish(OperationError.cancelled)
+                    fail(OperationError.cancelled)
                 }))
                 alertController.addAction(UIAlertAction(title: NSLocalizedString("Keep App Extensions (Use Main Profile)", comment: ""), style: .default) { _ in
                     finish(.keepAll(useMainProfile: true))
