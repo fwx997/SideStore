@@ -7,6 +7,7 @@
 //
 
 @preconcurrency import UIKit
+import CoreData
 import SideSign
 
 
@@ -45,14 +46,16 @@ final class PipelineRunner: Sendable
     @discardableResult
     func performSingleOperation(_ operation: AppOperation,
                                 handler: PipelineExecutionHandler,
-                                context: StandaloneOperationContext,
+                                dbContext: NSManagedObjectContext,
                                 completionHandler: @escaping (Result<InstalledApp, Error>) -> Void) -> RefreshGroup
     {
-        let group = RefreshGroup(context: context)
+        let group = RefreshGroup(dbContext: dbContext)
         group.completionHandler = { (results) in
             do
             {
-                guard let result = results.values.first else { throw group.context.error ?? OperationError.unknown() }
+                guard let result = results.values.first else {
+                    throw group.error ?? OperationError.unknownResult
+                }
                 let installedApp = try result.get()
                 completionHandler(.success(installedApp))
             }
@@ -67,6 +70,11 @@ final class PipelineRunner: Sendable
                 debugLog("[AppManager] performSingleOperation executing task for: \(operation.bundleIdentifier)")
                 try await self.perform([operation], handler: handler, group: group)
             } catch {
+                if Task.isCancelled || error is CancellationError {
+                    debugLog("[AppManager] performSingleOperation task CANCELLED for: \(operation.bundleIdentifier)")
+                    completionHandler(.failure(OperationError.cancelled))
+                    return
+                }
                 debugLog("[AppManager] performSingleOperation task failed for: \(operation.bundleIdentifier) with error: \(error)")
                 completionHandler(.failure(error))
             }
@@ -77,10 +85,10 @@ final class PipelineRunner: Sendable
     
     func performVoidOperation(_ operation: AppOperation,
                               handler: PipelineExecutionHandler,
-                              context: StandaloneOperationContext,
+                              dbContext: NSManagedObjectContext,
                               completionHandler: @escaping (Result<Void, Error>) -> Void)
     {
-        self.performSingleOperation(operation, handler: handler, context: context) { (result) in
+        self.performSingleOperation(operation, handler: handler, dbContext: dbContext) { (result) in
             switch result {
             case .success:
                 completionHandler(.success(()))
@@ -117,7 +125,7 @@ final class PipelineRunner: Sendable
             for operation in operations {                   // Clean up progress for all operations
                 progress.set(nil, for: operation)
             }
-            if let error = group.context.error {            // Mark error as-is
+            if let error = group.error {            // Mark error as-is
                 for operation in operations {
                     group.set(.failure(error), forAppWithBundleIdentifier: operation.bundleIdentifier)
                 }
@@ -140,9 +148,9 @@ final class PipelineRunner: Sendable
            case .failure(let error) = await isMinimuxerReady()
         {
             let opError = error.asOperationError
-            group.context.error = opError
+            group.error = opError
             for operation in operations {
-                let elapsed = CFAbsoluteTimeGetCurrent() - group.context.operationStartTime
+                let elapsed = CFAbsoluteTimeGetCurrent() - group.operationStartTime
                 operation.logSummary(status: "FAILED", elapsed: elapsed, error: opError)
             }
             throw opError
@@ -171,16 +179,17 @@ final class PipelineRunner: Sendable
         }
         
         do {
+            let preflightContext = StandaloneOperationContext(steps: .preflightChecks, dbBackgroundContext: group.dbContext)
             let validateOp = try PreflightChecksOperation(
                 operations: unhandledOperations,
                 handler: handler.preflightChecksHandler,
-                context: group.context
+                context: preflightContext
             )
             try await validateOp.execute()
         } catch {
-            group.context.error = error
+            group.error = error
             for operation in operations {
-                let elapsed = CFAbsoluteTimeGetCurrent() - group.context.operationStartTime
+                let elapsed = CFAbsoluteTimeGetCurrent() - group.operationStartTime
                 operation.logSummary(status: "FAILED", elapsed: elapsed, error: error)
             }
             throw error
@@ -218,7 +227,7 @@ final class PipelineRunner: Sendable
             
             // persist the result
             let bundleID = result.bundleIdentifier
-            let dbContext = group.context.dbBackgroundContext
+            let dbContext = group.dbContext
             do {
                 try await dbContext.perform {
                     let hasChanges = dbContext.hasChanges
@@ -234,7 +243,7 @@ final class PipelineRunner: Sendable
             group.set(.success(result), forAppWithBundleIdentifier: bundleID)
             debugLog("[AppManager] performOperation: Execution SUCCESS for app: \(operation.bundleIdentifier)")
             
-            let elapsed = CFAbsoluteTimeGetCurrent() - group.context.operationStartTime
+            let elapsed = CFAbsoluteTimeGetCurrent() - group.operationStartTime
             operation.logSummary(status: "SUCCESS", elapsed: elapsed)
             
             debugLog("[AppManager] performOperation: Reloading widget timelines...")
@@ -242,7 +251,7 @@ final class PipelineRunner: Sendable
             debugLog("[AppManager] performOperation: Reloading COMPLETE for widget timelines.")
             
             if result.bundleIdentifier == StoreApp.altstoreAppID {
-                let context = StandaloneOperationContext(steps: .scheduleExpirationWarningNotification, dbBackgroundContext: group.context.dbBackgroundContext)
+                let context = StandaloneOperationContext(steps: .scheduleExpirationWarningNotification, dbBackgroundContext: group.dbContext)
                 let scheduleNotifOp = try ScheduleExpirationWarningNotificationOperation(
                     installedApp: result,
                     context: context
@@ -254,14 +263,21 @@ final class PipelineRunner: Sendable
             await CellularRefreshManager.shared.turnOnDataIfNeeded()
             progress.set(nil, for: operation)
             
-            let elapsed = CFAbsoluteTimeGetCurrent() - group.context.operationStartTime
-            let status = Task.isCancelled ? "CANCELLED" : "FAILED"
-            if Task.isCancelled {
+            let elapsed = CFAbsoluteTimeGetCurrent() - group.operationStartTime
+            let isCancelled = Task.isCancelled || error is CancellationError
+            let status = isCancelled ? "CANCELLED" : "FAILED"
+            if isCancelled {
                 debugLog("[AppManager] performOperation: Execution CANCELLED for app: \(operation.bundleIdentifier)")
             } else {
                 debugLog("[AppManager] performOperation: Execution FAILED for app: \(operation.bundleIdentifier) with error: \(error.localizedDescription)")
             }
             operation.logSummary(status: status, elapsed: elapsed, error: error)
+            
+            if isCancelled {
+                // Cancellation error is logged and ignored
+                group.set(.failure(OperationError.cancelled), forAppWithBundleIdentifier: operation.bundleIdentifier)
+                return
+            }
             
             let mappedError = logger.getMappedError(for: operation, error: error)
             
@@ -277,7 +293,7 @@ final class PipelineRunner: Sendable
         let context = InstallAppOperationContext(
             pipelineSteps: pipelineSteps,
             bundleIdentifier: operation.bundleIdentifier,
-            standaloneContext: group.context,
+            dbBackgroundContext: group.dbContext,
             sharedContext: group.sharedContext,
             handler: handler,
             additionalEntitlements: defaultEntitlements,
@@ -285,7 +301,10 @@ final class PipelineRunner: Sendable
         )
         
         if case .install(_, let customID) = operation { context.customBundleIdentifier  = customID }
-        if case .update(_,  let customID) = operation { context.customBundleIdentifier  = customID }
+        if case .update(_,  let customID) = operation {
+            context.customBundleIdentifier  = customID
+            context.isStoreUpdate = true
+        }
         if case .resign(_,  let mode)     = operation { context.alternateIconMode       = mode }
         
         if let app = operation.app as? InstalledApp {
@@ -325,6 +344,14 @@ final class PipelineRunner: Sendable
             permissionsMode: permissionsMode,
             operationProgress: operationProgress
         )
+    }
+}
+
+extension RefreshGroup {
+    var context: StandaloneOperationContext {
+        let ctx = StandaloneOperationContext(steps: [], dbBackgroundContext: dbContext)
+        ctx.error = self.error
+        return ctx
     }
 }
 

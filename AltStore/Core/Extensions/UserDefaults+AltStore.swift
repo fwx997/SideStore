@@ -152,24 +152,30 @@ public extension UserDefaults
         get { self.bool(forKey: #function) }
         set { self.set(newValue, forKey: #function) }
     }
+    @objc var customizeInfoPlist: Bool {
+        get { self.bool(forKey: #function) }
+        set { self.set(newValue, forKey: #function) }
+    }
+    @objc var preferSheetForInfoPlistCustomization: Bool {
+        get { self.bool(forKey: #function) }
+        set { self.set(newValue, forKey: #function) }
+    }
     @objc var customizeAppId: Bool {
         get { self.bool(forKey: #function) }
         set { self.set(newValue, forKey: #function) }
     }
-    var customizeAppExtensions: Bool {
+    
+    var customizeAppExtensions: AppExtensionCustomization {
         get {
-            if self.object(forKey: "customizeAppExtensions") != nil {
-                return self._customizeAppExtensions
-            }
-            if let activeTeam = DatabaseManager.shared.activeTeam(), activeTeam.type != .free {
-                return false
-            }
-            return true
+            let option = _customizeAppExtensions.flatMap { AppExtensionCustomization(rawValue: $0) } ?? .promptUser
+            return option
         }
-        set { self._customizeAppExtensions = newValue }
+        set {
+            _customizeAppExtensions = newValue.rawValue
+        }
     }
-    @objc(customizeAppExtensions) private var _customizeAppExtensions: Bool {
-        get { self.bool(forKey: "customizeAppExtensions") }
+    @objc(customizeAppExtensions) private var _customizeAppExtensions: String? {
+        get { self.string(forKey: "customizeAppExtensions") }
         set { self.set(newValue, forKey: "customizeAppExtensions") }
     }
     var autoFixAppGroupIDs: Bool {
@@ -214,6 +220,10 @@ public extension UserDefaults
         set { self.set(newValue, forKey: #function) }
     }
     @objc var keepAnisetteDataAfterLogout: Bool {
+        get { self.bool(forKey: #function) }
+        set { self.set(newValue, forKey: #function) }
+    }
+    @objc var isDeviceRegistered: Bool {
         get { self.bool(forKey: #function) }
         set { self.set(newValue, forKey: #function) }
     }
@@ -440,7 +450,10 @@ public extension UserDefaults
             #keyPath(UserDefaults.skipNonCopyableBackupFiles): true,
             
             #keyPath(UserDefaults.responseCachingDisabled): false,
+            #keyPath(UserDefaults.customizeInfoPlist): false,
+            #keyPath(UserDefaults.preferSheetForInfoPlistCustomization): true,
             #keyPath(UserDefaults.customizeAppId): false,
+            #keyPath(UserDefaults._customizeAppExtensions): AppExtensionCustomization.promptUser.rawValue,
             #keyPath(UserDefaults.preferResignedIPA): true,
             #keyPath(UserDefaults.isExportResignedAppEnabled): false,
             #keyPath(UserDefaults.isVerboseOperationsLoggingEnabled): false,
@@ -452,6 +465,7 @@ public extension UserDefaults
             #keyPath(UserDefaults.isCellularRefreshEnabled): false,
             #keyPath(UserDefaults.isPairingReset): true,
             #keyPath(UserDefaults.isDebugModeEnabled): false,
+            #keyPath(UserDefaults.isDeviceRegistered): false,
 
         ] as [String: Any]
 

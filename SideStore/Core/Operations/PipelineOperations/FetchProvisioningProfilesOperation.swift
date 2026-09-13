@@ -25,14 +25,11 @@ class FetchProvisioningProfilesOperation: BasePipelineOperation<InstallAppOperat
             throw error
         }
         
-        guard let team = AuthManager.shared.team else {
-            self.debugLog("[FetchProvisioningProfiles] Team not found in AuthManager.")
-            throw OperationError.notAuthenticated
-        }
+        let team = try await AuthManager.shared.getAuthenticatedTeam()
         
         guard let targetAppBundle = self.context.targetAppBundle else {
-            self.debugLog("[FetchProvisioningProfiles] App not found in context.")
-            throw OperationError.appNotFound(name: nil)
+            self.debugLog("[FetchProvisioningProfiles] Target app bundle missing in context.")
+            throw OperationError.invalidParameters("FetchProvisioningProfilesOperation: context.targetAppBundle is nil")
         }
         
         let effectiveBundleId = self.context.targetBundleIdentifier
@@ -186,18 +183,16 @@ private extension FetchProvisioningProfilesOperation{
                                name: String,
                                bundleIdentifier: String,
                                team: ALTTeam) async throws -> ALTAppID {
-        let appIDs: [ALTAppID]
-        if let cachedAppIDs = self.context.sharedContext?.appIDs {
-            self.debugLog("[FetchProvisioningProfiles] Using cached App IDs from shared context.")
-            appIDs = cachedAppIDs
-        } else {
-            self.debugLog("[FetchProvisioningProfiles] Fetching existing App IDs from Apple for team \(team.identifier)...")
-            let fetchedAppIDs = try await TaskChainCoalescer.shared.coalesce(key: "fetch_app_ids_\(team.identifier)") {
-                try await DeveloperPortalProxy.shared.fetchAppIDs(for: team)
+        let appIDs = try await TaskChainCoalescer.shared.coalesce(key: "fetch_app_ids_\(team.identifier)") {
+            if let cachedAppIDs = self.context.sharedContext.appIDs {
+                self.debugLog("[FetchProvisioningProfiles] Using cached App IDs from shared context.")
+                return cachedAppIDs
             }
-            self.context.sharedContext?.appIDs = fetchedAppIDs
-            appIDs = fetchedAppIDs
-            self.verboseLog("[FetchProvisioningProfiles] Found \(appIDs.count) existing App IDs on portal for team \(team.identifier): \(appIDs.map { $0.bundleIdentifier })")
+            self.debugLog("[FetchProvisioningProfiles] Fetching existing App IDs from Apple for team \(team.identifier)...")
+            let fetchedAppIDs = try await DeveloperPortalProxy.shared.fetchAppIDs(for: team)
+            self.context.sharedContext.appIDs = fetchedAppIDs
+            self.verboseLog("[FetchProvisioningProfiles] Found \(fetchedAppIDs.count) existing App IDs on portal for team \(team.identifier): \(fetchedAppIDs.map { $0.bundleIdentifier })")
+            return fetchedAppIDs
         }
         
         if let appID = appIDs.first(where: { $0.bundleIdentifier.lowercased() == bundleIdentifier.lowercased() }) {
@@ -210,12 +205,11 @@ private extension FetchProvisioningProfilesOperation{
             
             let sortedExpirationDates = appIDs.compactMap { $0.expirationDate }.sorted(by: { $0 < $1 })
             
-            let sanitized = name.filter { $0.isLetter || $0.isNumber || $0.isWhitespace }
-            let appIDName = sanitized.isEmpty ? bundleIdentifier : sanitized
+            let appIDName = self.sanitizeAppIDName(name: name, bundleIdentifier: bundleIdentifier)
             
             self.debugLog("[FetchProvisioningProfiles] Calling DeveloperPortalProxy.shared.addAppID with name '\(appIDName)' and identifier '\(bundleIdentifier)'...")
             let appID = try await DeveloperPortalProxy.shared.addAppID(name: appIDName, bundleIdentifier: bundleIdentifier, team: team)
-            self.context.sharedContext?.appendAppID(appID)
+            self.context.sharedContext.appendAppID(appID)
             self.debugLog("[FetchProvisioningProfiles] Successfully registered new App ID '\(appID.bundleIdentifier)' on Apple portal.")
             return appID
         }
@@ -343,16 +337,18 @@ private extension FetchProvisioningProfilesOperation{
         var seenGroupIDs = Set<String>()
         
         do {
-            let fetchedGroups: [ALTAppGroup]
-            if let cachedGroups = self.context.sharedContext?.appGroups {
-                self.debugLog("[FetchProvisioningProfiles] Using cached App Groups from shared context.")
-                fetchedGroups = cachedGroups
-            } else {
+            let appGroups = try await TaskChainCoalescer.shared.coalesce(key: "fetch_app_groups_\(team.identifier)") {
+                if let cachedGroups = self.context.sharedContext.appGroups {
+                    self.debugLog("[FetchProvisioningProfiles] Using cached App Groups from shared context.")
+                    return cachedGroups
+                }
                 self.debugLog("[FetchProvisioningProfiles] Fetching existing App Groups from Apple for team \(team.identifier)...")
-                let groups = try await DeveloperPortalProxy.shared.fetchAppGroups(for: team)
-                self.context.sharedContext?.appGroups = groups
-                fetchedGroups = groups
+                let fetched = try await DeveloperPortalProxy.shared.fetchAppGroups(for: team)
+                self.context.sharedContext.appGroups = fetched
+                self.verboseLog("[FetchProvisioningProfiles] Found \(fetched.count) existing App Groups on portal for team \(team.identifier): \(fetched.map { $0.groupIdentifier })")
+                return fetched
             }
+            self.verboseLog("[FetchProvisioningProfiles] Active App Groups for team \(team.identifier): \(appGroups.map { $0.groupIdentifier })")
             
             var groups = [ALTAppGroup]()
             
@@ -360,21 +356,29 @@ private extension FetchProvisioningProfilesOperation{
                 let adjustedGroupIdentifier = try await self.adjustedGroupIdentifier(for: groupIdentifier, appID: appID, targetAppBundle: targetAppBundle, team: team)
                 guard seenGroupIDs.insert(adjustedGroupIdentifier).inserted else { continue }
                 
-                if let group = fetchedGroups.first(where: { $0.groupIdentifier == adjustedGroupIdentifier }) {
-                    groups.append(group)
+                let group: ALTAppGroup
+                if let existing = self.context.sharedContext.appGroups?.first(where: { $0.groupIdentifier == adjustedGroupIdentifier }) {
+                    group = existing
                 } else {
                     // Not all characters are allowed in group names, so we replace periods with spaces (like Apple does).
                     let name = "SideStore " + groupIdentifier.replacingOccurrences(of: ".", with: " ")
                     do {
-                        let group = try await DeveloperPortalProxy.shared.addAppGroup(name: name, groupIdentifier: adjustedGroupIdentifier, team: team)
-                        self.context.sharedContext?.appendAppGroup(group)
-                        self.verboseLog("[FetchProvisioningProfiles] Created new App Group \(group.groupIdentifier).")
-                        groups.append(group)
+                        group = try await TaskChainCoalescer.shared.coalesce(key: "add_app_group_\(adjustedGroupIdentifier)") {
+                            // skip add if already added into shared by other tasks
+                            if let existing = self.context.sharedContext.appGroups?.first(where: { $0.groupIdentifier == adjustedGroupIdentifier }) {
+                                return existing
+                            }
+                            let newGroup = try await DeveloperPortalProxy.shared.addAppGroup(name: name, groupIdentifier: adjustedGroupIdentifier, team: team)
+                            self.context.sharedContext.appendAppGroup(newGroup)
+                            self.verboseLog("[FetchProvisioningProfiles] Created new App Group \(newGroup.groupIdentifier).")
+                            return newGroup
+                        }
                     } catch {
                         self.debugLog("[FetchProvisioningProfiles] Failed to create new App Group \(adjustedGroupIdentifier). \(error.localizedDescription)")
                         throw error
                     }
                 }
+                groups.append(group)
             }
             
             try await DeveloperPortalProxy.shared.assignAppID(appID, to: Array(groups), team: team)
@@ -426,5 +430,54 @@ private extension FetchProvisioningProfilesOperation{
         }
 
         return groupIdentifier + "." + team.identifier
+    }
+}
+
+private extension FetchProvisioningProfilesOperation {
+    func sanitizeAppIDName(name: String, bundleIdentifier: String) -> String {
+        let sanitizedName = self.sanitizeToAscii(name)
+        if !sanitizedName.isEmpty {
+            return sanitizedName
+        }
+
+        return self.sanitizeToAscii(bundleIdentifier)
+    }
+
+    func sanitizeToAscii(_ string: String) -> String {
+        let romanized = string.applyingTransform(.toLatin, reverse: false) ?? string
+
+        let asciiConverted: String
+        if let icuTransliterated = romanized.applyingTransform(StringTransform("Latin-ASCII"), reverse: false) {
+            asciiConverted = icuTransliterated
+        } else if let lossyData = romanized.data(using: .ascii, allowLossyConversion: true),
+                  let lossyString = String(data: lossyData, encoding: .ascii) {
+            asciiConverted = lossyString
+        } else {
+            asciiConverted = romanized
+        }
+
+        var result = ""
+        result.reserveCapacity(min(asciiConverted.utf8.count, 50))
+        var lastWasSpace = true
+
+        for scalar in asciiConverted.unicodeScalars {
+            if result.count >= 50 { break }
+
+            if (scalar.value >= 0x30 && scalar.value <= 0x39) ||
+               (scalar.value >= 0x41 && scalar.value <= 0x5A) ||
+               (scalar.value >= 0x61 && scalar.value <= 0x7A) {
+                result.unicodeScalars.append(scalar)
+                lastWasSpace = false
+            } else if !lastWasSpace {
+                result.append(" ")
+                lastWasSpace = true
+            }
+        }
+
+        if lastWasSpace, !result.isEmpty {
+            result.removeLast()
+        }
+
+        return result
     }
 }

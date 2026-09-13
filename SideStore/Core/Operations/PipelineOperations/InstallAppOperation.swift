@@ -50,7 +50,7 @@ final class InstallAppOperation: BasePipelineOperation<InstallAppOperationContex
 
         #if !targetEnvironment(simulator)
         guard resignedAppBundle.provisioningProfile != nil else {
-            throw OperationError.invalidApp
+            throw OperationError.missingProvisioningProfile(reason: "Resigned app bundle '\(resignedAppBundle.bundleIdentifier)' is missing its embedded provisioning profile.")
         }
         #endif
 
@@ -60,13 +60,15 @@ final class InstallAppOperation: BasePipelineOperation<InstallAppOperationContex
         let backgroundContext = self.context.dbBackgroundContext
         
         self.setProgress(10)
+        let authTeam = try await AuthManager.shared.getAuthenticatedTeam()
         do {
             let installedApp = try await installApp(
                 in: backgroundContext,
                 certificate: certificate,
                 resignedAppBundle: resignedAppBundle,
                 provisioningProfiles: provisioningProfiles,
-                storeBuildVersion: storeBuildVersion
+                storeBuildVersion: storeBuildVersion,
+                authTeam: authTeam
             )
             await CellularRefreshManager.shared.turnOnDataIfNeeded()
             return installedApp
@@ -96,7 +98,8 @@ final class InstallAppOperation: BasePipelineOperation<InstallAppOperationContex
                             certificate: ALTCertificate,
                             resignedAppBundle: ALTApplication,
                             provisioningProfiles: [String: ALTProvisioningProfile],
-                            storeBuildVersion: String?) async throws -> InstalledApp
+                            storeBuildVersion: String?,
+                            authTeam: ALTTeam) async throws -> InstalledApp
     {
         let (installedApp, isDifferentSideStore, bundleID, isSelfReinstall) = try await backgroundContext.perform {
             /* App */
@@ -104,7 +107,8 @@ final class InstallAppOperation: BasePipelineOperation<InstallAppOperationContex
                 in: backgroundContext,
                 certificate: certificate,
                 resignedAppBundle: resignedAppBundle,
-                storeBuildVersion: storeBuildVersion
+                storeBuildVersion: storeBuildVersion,
+                authTeam: authTeam
             )
             
             let isDifferentSideStore = Self.isDifferentSideStoreContainer(installedApp, resignedAppBundle)
@@ -203,7 +207,9 @@ final class InstallAppOperation: BasePipelineOperation<InstallAppOperationContex
 
     private func fetchOrCreateApp(in backgroundContext: NSManagedObjectContext,
                                   certificate: ALTCertificate,
-                                  resignedAppBundle: ALTApplication, storeBuildVersion: String?) throws -> InstalledApp
+                                  resignedAppBundle: ALTApplication,
+                                  storeBuildVersion: String?,
+                                  authTeam: ALTTeam) throws -> InstalledApp
     {
         let target = self.context.targetBundleIdentifier
         let predicate = NSPredicate(
@@ -230,7 +236,8 @@ final class InstallAppOperation: BasePipelineOperation<InstallAppOperationContex
             installedApp.certificateStatus = self.context.targetCertStatus ?? installedApp.certificateStatus
             installedApp.customBundleIdentifier = context.customBundleIdentifier
             installedApp.useMainProfile = context.useMainProfile
-            if let team = DatabaseManager.shared.activeTeam(in: backgroundContext) {
+            let teamPredicate = NSPredicate(format: "%K == %@", #keyPath(Team.identifier), authTeam.identifier)
+            if let team = Team.first(satisfying: teamPredicate, in: backgroundContext) {
                 installedApp.team = team
             }
             if let storeApp {

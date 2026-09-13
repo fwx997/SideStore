@@ -78,7 +78,9 @@ final class VerifyAppOperation: BasePipelineOperation<InstallAppOperationContext
             return false
         }
         
-        guard let ipaURL = context.ipaURL else { throw OperationError.appNotFound(name: appBundle.name) }
+        guard let ipaURL = context.ipaURL else {
+            throw OperationError.invalidParameters("Missing IPA URL for '\(appBundle.name)' in operation context")
+        }
         self.setProgress(30)
                             
         // 3. Checksum (SHA-256) Verification
@@ -183,7 +185,9 @@ final class VerifyAppOperation: BasePipelineOperation<InstallAppOperationContext
             
         case .added:
             let installedAppURL = InstalledApp.fileURL(for: appBundle)
-            guard let previousApp = ALTApplication(fileURL: installedAppURL) else { throw OperationError.appNotFound(name: appBundle.name) }
+            guard let previousApp = ALTApplication(fileURL: installedAppURL) else {
+                throw OperationError.missingAppBundle(reason: "Could not locate installed bundle for '\(appBundle.name)' at '\(installedAppURL.lastPathComponent)'")
+            }
             
             var previousEntitlements = Set(previousApp.entitlements.keys.map { ALTEntitlement(rawValue: $0) })
             for appExtension in previousApp.appExtensions {

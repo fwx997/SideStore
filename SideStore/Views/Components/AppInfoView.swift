@@ -31,9 +31,12 @@ struct AppInfoView: View {
         return try? ALTProvisioningProfile(url: profileURL)
     }
     
+    private var infoPlistParser: InfoPlistParser? {
+        try? InfoPlistParser(bundleURL: appBundleURL)
+    }
+
     private var infoPlist: [String: Any]? {
-        let plistURL = appBundleURL.appendingPathComponent("Info.plist")
-        return NSDictionary(contentsOf: plistURL) as? [String: Any]
+        infoPlistParser?.rawDictionary
     }
     
     var body: some View {
@@ -411,9 +414,8 @@ struct ExtensionInfoView: View {
 
         // Match by bundle ID in Info.plist
         for url in contents where url.pathExtension == "appex" {
-            let plistURL = url.appendingPathComponent("Info.plist")
-            if let dict = NSDictionary(contentsOf: plistURL) as? [String: Any],
-               let bid = dict["CFBundleIdentifier"] as? String,
+            if let parser = try? InfoPlistParser(bundleURL: url),
+               let bid = parser.bundleIdentifier,
                bid == appExtension.resignedBundleIdentifier || bid == appExtension.bundleIdentifier {
                 return url
             }
@@ -427,9 +429,13 @@ struct ExtensionInfoView: View {
         return try? ALTProvisioningProfile(url: url.appendingPathComponent("embedded.mobileprovision"))
     }
 
-    private var infoPlist: [String: Any]? {
+    private var infoPlistParser: InfoPlistParser? {
         guard let url = extensionURL else { return nil }
-        return NSDictionary(contentsOf: url.appendingPathComponent("Info.plist")) as? [String: Any]
+        return try? InfoPlistParser(bundleURL: url)
+    }
+
+    private var infoPlist: [String: Any]? {
+        infoPlistParser?.rawDictionary
     }
 
     // Nested sub-extensions inside this .appex (rare but possible)
@@ -526,11 +532,11 @@ struct ExtensionInfoView: View {
             if !subExtensions.isEmpty {
                 Section(header: Text("Nested Extensions (\(subExtensions.count))")) {
                     ForEach(subExtensions, id: \.path) { subURL in
-                        let subPlist = NSDictionary(contentsOf: subURL.appendingPathComponent("Info.plist")) as? [String: Any]
-                        let subName = subPlist?["CFBundleDisplayName"] as? String
-                            ?? subPlist?["CFBundleName"] as? String
+                        let subParser = try? InfoPlistParser(bundleURL: subURL)
+                        let subName = subParser?.displayName
+                            ?? subParser?.bundleName
                             ?? subURL.deletingPathExtension().lastPathComponent
-                        let subBundleID = subPlist?["CFBundleIdentifier"] as? String ?? "Unknown"
+                        let subBundleID = subParser?.bundleIdentifier ?? "Unknown"
                         NavigationLink(destination: BundleInspectorView(bundleURL: subURL, certificatesViewModel: certificatesViewModel)) {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(subName)
@@ -571,8 +577,12 @@ struct BundleInspectorView: View {
         try? ALTProvisioningProfile(url: bundleURL.appendingPathComponent("embedded.mobileprovision"))
     }
 
+    private var infoPlistParser: InfoPlistParser? {
+        try? InfoPlistParser(bundleURL: bundleURL)
+    }
+
     private var infoPlist: [String: Any]? {
-        NSDictionary(contentsOf: bundleURL.appendingPathComponent("Info.plist")) as? [String: Any]
+        infoPlistParser?.rawDictionary
     }
 
     private var subExtensions: [URL] {
@@ -659,11 +669,11 @@ struct BundleInspectorView: View {
             if !subExtensions.isEmpty {
                 Section(header: Text("Nested Extensions (\(subExtensions.count))")) {
                     ForEach(subExtensions, id: \.path) { subURL in
-                        let subPlist = NSDictionary(contentsOf: subURL.appendingPathComponent("Info.plist")) as? [String: Any]
-                        let subName = subPlist?["CFBundleDisplayName"] as? String
-                            ?? subPlist?["CFBundleName"] as? String
+                        let subParser = try? InfoPlistParser(bundleURL: subURL)
+                        let subName = subParser?.displayName
+                            ?? subParser?.bundleName
                             ?? subURL.deletingPathExtension().lastPathComponent
-                        let subBundleID = subPlist?["CFBundleIdentifier"] as? String ?? "Unknown"
+                        let subBundleID = subParser?.bundleIdentifier ?? "Unknown"
                         NavigationLink(destination: BundleInspectorView(bundleURL: subURL, certificatesViewModel: certificatesViewModel)) {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(subName)

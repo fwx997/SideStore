@@ -184,11 +184,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
                 
                 if isFirstLaunch
                 {
-                    AuthManager.shared.signOut()
+                    await AuthManager.shared.signOut()
                 }
 
                 // Perform one-time maintenance tasks after database is started
-                MaintenanceManager.shared.performMaintenanceIfNeeded()
+                await MaintenanceManager.shared.performMaintenanceIfNeeded()
             }
             catch
             {

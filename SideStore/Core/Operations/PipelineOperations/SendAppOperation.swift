@@ -47,7 +47,7 @@ final class SendAppOperation: BasePipelineOperation<InstallAppOperationContext, 
             await CellularRefreshManager.shared.turnOnDataIfNeeded()
 
             // zh-patch: AFC 连接经 LocalDevVPN 隧道偶发瞬断 (Broken pipe)。
-            // 2 秒后自动重试一次; 重试仍失败才抛错 (错误信息保留原始错误便于排查)
+            // 2 秒后自动重试一次; 重试仍失败才抛错 (按上游约定保留原始错误, 不再掩盖)
             debugLog("[SendAppOperation] zh-patch: send failed (\(error)), retrying once in 2s...")
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             await CellularRefreshManager.shared.turnOffDataIfNeeded()
@@ -60,12 +60,13 @@ final class SendAppOperation: BasePipelineOperation<InstallAppOperationContext, 
                 } else {
                     try await sendAppBundleAfc(bundleIdentifier, at: appURL)
                 }
+                self.setProgress(100)
                 debugLog("[SendAppOperation] zh-patch: send retry succeeded")
             }
             catch
             {
                 debugLog("[SendAppOperation] zh-patch: send retry also failed: \(error)")
-                throw OperationError.appNotFound(name: bundleIdentifier)
+                throw error
             }
         }
         return resignedAppBundle

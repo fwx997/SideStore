@@ -18,8 +18,10 @@ struct UserCustomizationsView: View {
     @State private var selectedBackend: GatewayBackend = selectedGatewayBackendCache
     @State private var useOnDeviceAnisette: Bool = UserDefaults.standard.useOnDeviceAnisette
     @State private var showAnisetteRestartConfirmation: Bool = false
+    @State private var customizeInfoPlist: Bool = UserDefaults.standard.customizeInfoPlist
+    @State private var preferSheetForInfoPlistCustomization: Bool = UserDefaults.standard.preferSheetForInfoPlistCustomization
     @State private var customizeAppId: Bool = UserDefaults.standard.customizeAppId
-    @State private var customizeAppExtensions: Bool = UserDefaults.standard.customizeAppExtensions
+    @State private var customizeAppExtensions: AppExtensionCustomization = UserDefaults.standard.customizeAppExtensions
     @State private var autoFixAppGroupIDs: Bool = UserDefaults.standard.autoFixAppGroupIDs
     @State private var preferResignedIPA: Bool = UserDefaults.standard.preferResignedIPA
     @State private var pendingPreferIPAOngoing: Bool = false
@@ -38,10 +40,9 @@ struct UserCustomizationsView: View {
     @State private var isChecksumVerificationEnabled: Bool = UserDefaults.standard.isChecksumVerificationEnabled
     @State private var isFileSizeVerificationEnabled: Bool = UserDefaults.standard.isFileSizeVerificationEnabled
     @State private var permissionCheckingDisabled: Bool = UserDefaults.standard.permissionCheckingDisabled
+    @State private var wireGuardExportURL: URL? = nil
 
-    private var isFreeAccount: Bool {
-        DatabaseManager.shared.activeTeam()?.type == .free
-    }
+    @State private var isFreeAccount: Bool = false
 
     var body: some View {
         ScrollView {
@@ -173,23 +174,66 @@ struct UserCustomizationsView: View {
                         .padding(.horizontal, 16)
                     
                     VStack(spacing: 0) {
-                        toggleRow(title: "Customize AppID", isOn: Binding(
-                            get: { customizeAppId },
+                        toggleRow(
+                            title: "Prefer Sheet for Info.plist",
+                            subtitle: "Use sheet instead of dialog",
+                            isOn: Binding(
+                                get: { preferSheetForInfoPlistCustomization },
+                                set: { newValue in
+                                    preferSheetForInfoPlistCustomization = newValue
+                                    UserDefaults.standard.preferSheetForInfoPlistCustomization = newValue
+                                }
+                            )
+                        )
+                        .disabled(!customizeInfoPlist)
+                        .opacity(!customizeInfoPlist ? 0.4 : 1.0)
+                        
+                        divider
+                        
+                        toggleRow(title: "Customize Info.plist", isOn: Binding(
+                            get: { customizeInfoPlist },
                             set: { newValue in
-                                customizeAppId = newValue
-                                UserDefaults.standard.customizeAppId = newValue
+                                customizeInfoPlist = newValue
+                                UserDefaults.standard.customizeInfoPlist = newValue
                             }
                         ))
                         
                         divider
                         
-                        toggleRow(title: "Customize App Extensions", isOn: Binding(
-                            get: { customizeAppExtensions },
+                        toggleRow(title: "Customize AppID", isOn: Binding(
+                            get: { customizeInfoPlist ? true : customizeAppId },
                             set: { newValue in
-                                customizeAppExtensions = newValue
-                                UserDefaults.standard.customizeAppExtensions = newValue
+                                customizeAppId = newValue
+                                UserDefaults.standard.customizeAppId = newValue
                             }
                         ))
+                        .disabled(customizeInfoPlist)
+                        .opacity(customizeInfoPlist ? 0.4 : 1.0)
+                        
+                        divider
+                        
+                        HStack {
+                            Text("Customize Extensions")
+                                .font(.system(size: 17, weight: .bold))
+                                .foregroundColor(.white)
+                            Spacer()
+                            Picker("", selection: Binding(
+                                get: { customizeAppExtensions },
+                                set: { newValue in
+                                    customizeAppExtensions = newValue
+                                    UserDefaults.standard.customizeAppExtensions = newValue
+                                }
+                            )) {
+                                ForEach(AppExtensionCustomization.allCases) { option in
+                                    Text(option.displayName).tag(option)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .tint(Color.white.opacity(0.7))
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .frame(minHeight: 50)
                         
                         divider
                         
@@ -429,9 +473,11 @@ struct UserCustomizationsView: View {
         #endif
         .alert("Restart Required", isPresented: $showAnisetteRestartConfirmation) {
             SwiftUI.Button("Restart Now", role: .destructive) {
-                AuthManager.shared.signOut(keepCertificate: true, keepAnisetteData: false)
-                UserDefaults.standard.useOnDeviceAnisette = useOnDeviceAnisette
-                exit(0)
+                Task {
+                    await AuthManager.shared.signOut(keepCertificate: true, keepAnisetteData: false)
+                    UserDefaults.standard.useOnDeviceAnisette = useOnDeviceAnisette
+                    exit(0)
+                }
             }
             SwiftUI.Button("Cancel", role: .cancel) {
                 useOnDeviceAnisette = UserDefaults.standard.useOnDeviceAnisette
@@ -480,6 +526,17 @@ struct UserCustomizationsView: View {
                 Text("Switching to App Bundle prioritizes storage efficiency by transferring the app bundle directly without packaging a temporary IPA, but transfer speeds will be noticeably slower.")
             }
         }
+        .sheet(isPresented: Binding<Bool>(
+            get: { wireGuardExportURL != nil },
+            set: { if !$0 { wireGuardExportURL = nil } }
+        )) {
+            if let url = wireGuardExportURL {
+                ActivityViewController(activityItems: [url])
+            }
+        }
+        .task {
+            isFreeAccount = (try? await AuthManager.shared.getAuthenticatedTeam())?.type == .free
+        }
     }
 
     private func toggleRow(title: String, subtitle: String? = nil, isOn: Binding<Bool>) -> some View {
@@ -514,18 +571,14 @@ struct UserCustomizationsView: View {
     }
 
     private func exportWireGuardConfig() {
-        guard let top = UIApplication.shared.topViewController() else { return }
         guard let url = Bundle.main.url(forResource: "SideStore", withExtension: "conf") else {
-            let toastView = ToastView(text: NSLocalizedString("SideStore.conf missing!", comment: ""), detailText: "Unable to locate SideStore.conf in bundle resources.")
-            toastView.show(in: top)
+            if let top = UIApplication.shared.topViewController() {
+                let toastView = ToastView(text: NSLocalizedString("SideStore.conf missing!", comment: ""), detailText: "Unable to locate SideStore.conf in bundle resources.")
+                toastView.show(in: top)
+            }
             return
         }
-        #if !os(tvOS)
-        let activityVC = UIActivityViewController(activityItems: [url], applicationActivities: nil)
-        top.present(activityVC, animated: true)
-        #else
-        TVWebFileTransferManager.shared.startExport(fileURL: url, title: "Export SideStore.conf", presentingVC: top)
-        #endif
+        wireGuardExportURL = url
     }
 
     private func presentResetAdiDialog() {
@@ -541,16 +594,18 @@ struct UserCustomizationsView: View {
         let cancelAction = UIAlertAction(title: NSLocalizedString("Cancel", comment: ""), style: .cancel, handler: nil)
         let resetAction = UIAlertAction(title: NSLocalizedString("Reset & Sign Out", comment: ""), style: .destructive) { _ in
             let keepHeaders = contentVC.isKeepHeadersChecked
-            AuthManager.shared.signOut(keepCertificate: true, keepAnisetteData: false, keepAnisetteHeaders: keepHeaders)
-            debugLog("Reset adi.pb (keepAnisetteHeaders: \(keepHeaders)) and signed out")
-            if let topVC = UIApplication.shared.topViewController() {
-                let detail = keepHeaders
-                    ? NSLocalizedString("Signed out of Apple ID. You can now sign back in with fresh provisioning.", comment: "")
-                    : NSLocalizedString("Signed out of Apple ID. Reset adi.pb and header configs to defaults.", comment: "")
-                ToastView(
-                    text: NSLocalizedString("Cleared adi.pb!", comment: ""),
-                    detailText: detail
-                ).show(in: topVC)
+            Task {
+                await AuthManager.shared.signOut(keepCertificate: true, keepAnisetteData: false, keepAnisetteHeaders: keepHeaders)
+                debugLog("Reset adi.pb (keepAnisetteHeaders: \(keepHeaders)) and signed out")
+                if let topVC = UIApplication.shared.topViewController() {
+                    let detail = keepHeaders
+                        ? NSLocalizedString("Signed out of Apple ID. You can now sign back in with fresh provisioning.", comment: "")
+                        : NSLocalizedString("Signed out of Apple ID. Reset adi.pb and header configs to defaults.", comment: "")
+                    ToastView(
+                        text: NSLocalizedString("Cleared adi.pb!", comment: ""),
+                        detailText: detail
+                    ).show(in: topVC)
+                }
             }
         }
         

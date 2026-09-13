@@ -40,6 +40,7 @@ class CertificatesViewModel: ObservableObject {
     @Published var showAlert = false
     @Published var remoteSerials: Set<String> = []
     @Published var hasFetchedRemote: Bool = false
+    @Published var shareURL: URL? = nil
     
     @Published var currentSort: SortOption   = .creationDate
     @Published var isAscending: Bool         = false

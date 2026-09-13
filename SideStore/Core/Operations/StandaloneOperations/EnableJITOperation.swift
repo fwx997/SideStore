@@ -105,9 +105,7 @@ final class EnableJITOperation: BaseStandaloneOperation<StandaloneOperationConte
 
 @available(iOS 17, *)
 func enableJITSideJITServer(serverURL: URL, bundleIdentifier: String, appName: String) async throws {
-    guard let udid = try await fetchUDID(useStatic: true) else {
-        throw SideJITServerErrorType.other("Unable to get UDID")
-    }
+    let udid = try await fetchUDID()
 
     let serverURLWithUDID = serverURL.appendingPathComponent(udid)
     let fullURL = serverURLWithUDID.appendingPathComponent(bundleIdentifier)

@@ -61,7 +61,7 @@ final class StageAppOperation: BasePipelineOperation<InstallAppOperationContext,
         debugLog("[StageAppOperation] Successfully copied app bundle to destination.")
         
         guard let stagedAppBundle = ALTApplication(fileURL: destinationURL) else {
-            throw OperationError.invalidApp
+            throw OperationError.missingAppBundle(reason: "Could not load staged app bundle at '\(destinationURL.lastPathComponent)'")
         }
         
         self.context.targetAppBundle = stagedAppBundle

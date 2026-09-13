@@ -243,6 +243,8 @@ class InstallAppOperationContext: PipelineOperationContext
 {
     let bundleIdentifier: String
     var customBundleIdentifier: String?
+    var customInfoPlist: [String: Any]?
+    var isStoreUpdate: Bool = false
     var targetAppBundle: ALTApplication?
 
     var provisioningProfiles: [String: ALTProvisioningProfile]?
@@ -260,8 +262,7 @@ class InstallAppOperationContext: PipelineOperationContext
     var targetCertStatus: CertificateStatus?
     var appendTeamID: Bool = true
 
-    let standaloneContext: StandaloneOperationContext
-    var sharedContext: SharedPipelineContext?
+    let sharedContext: SharedPipelineContext
 
     var targetBundleIdentifier: String { customBundleIdentifier ?? bundleIdentifier }
 
@@ -304,31 +305,17 @@ class InstallAppOperationContext: PipelineOperationContext
     @AsyncManaged
     var appVersion: AppVersion?
 
-    override var error: Error? {
-        get { localError ?? standaloneContext.error }
-        set { localError = newValue
-            if standaloneContext.error == nil
-            {
-                // Assign newValue to standaloneContext.error if the latter is nil.
-                // This fixes some operations continuing even after an error has occured.
-                standaloneContext.error = newValue
-            }
-        }
-    }
-    private var localError: Error?
-
     init(
         pipelineSteps: [PipelineExecutionStep],
         bundleIdentifier: String,
-        standaloneContext: StandaloneOperationContext,
-        sharedContext: SharedPipelineContext? = nil,
+        dbBackgroundContext: NSManagedObjectContext,
+        sharedContext: SharedPipelineContext,
         handler: PipelineExecutionHandler,
         additionalEntitlements: [ALTEntitlement: any Sendable] = [:],
         activeSigningCertificate: ALTCertificate? = nil,
         overrideSigningCertificate: ALTCertificate? = nil
     ) {
         self.bundleIdentifier = bundleIdentifier
-        self.standaloneContext = standaloneContext
         self.sharedContext = sharedContext
         self.additionalEntitlements = additionalEntitlements
         self.activeSigningCertificate = activeSigningCertificate
@@ -337,8 +324,7 @@ class InstallAppOperationContext: PipelineOperationContext
             pipelineSteps: pipelineSteps,
             handler: handler,
             error: nil,
-            dbBackgroundContext: standaloneContext.dbBackgroundContext
+            dbBackgroundContext: dbBackgroundContext
         )
-        self.operationStartTime = standaloneContext.operationStartTime
     }
 }

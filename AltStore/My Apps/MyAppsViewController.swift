@@ -69,6 +69,8 @@ class MyAppsViewController: UICollectionViewController
     // Cache
     private var cachedUpdateSizes = [String: CGSize]()
     
+    private var activeTeam: ALTTeam?
+    
     required init?(coder aDecoder: NSCoder)
     {
         super.init(coder: aDecoder)
@@ -150,11 +152,25 @@ class MyAppsViewController: UICollectionViewController
                 }
             }
         }
+        
+        Task { @MainActor [weak self] in
+            self?.activeTeam = try? await AuthManager.shared.getAuthenticatedTeam()
+        }
     }
     
     override func viewIsAppearing(_ animated: Bool)
     {
         super.viewIsAppearing(animated)
+        
+        Task { @MainActor [weak self] in
+            guard let self = self else { return }
+            let team = try? await AuthManager.shared.getAuthenticatedTeam()
+            if self.activeTeam != team
+            {
+                self.activeTeam = team
+                self.collectionView.reloadData()
+            }
+        }
         
         self.collectionView.reloadData()
         
@@ -281,6 +297,11 @@ class MyAppsViewController: UICollectionViewController
             
             let appViewController = segue.destination as! AppViewController
             appViewController.app = installedApp.storeApp
+            
+        case "showAppIDs":
+            let navigationController = segue.destination as? UINavigationController
+            let appIDsViewController = navigationController?.viewControllers.first as? AppIDsViewController
+            appIDsViewController?.activeTeam = self.activeTeam
             
         default: break
         }
@@ -920,27 +941,48 @@ private extension MyAppsViewController
     
     @IBAction func sideloadApp(_ sender: UIBarButtonItem)
     {
-        Task { @MainActor in
-            #if !os(tvOS)
-            let supportedTypes = UTType.types(tag: "ipa", tagClass: .filenameExtension, conformingTo: nil)
-            
-            let documentPickerViewController = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: true)
-            documentPickerViewController.delegate = self
-            self.present(documentPickerViewController, animated: true, completion: nil)
-            #else
-            TVWebFileTransferManager.shared.startImport(
-                acceptedExtensions: ["ipa"],
-                title: "Sideload IPA",
-                presentingVC: self
-            ) { [weak self] fileURL in
-                guard let fileURL = fileURL else { return }
+        InstallAppDialog.presentSourceSelection(
+            from: self,
+            barButtonItem: sender,
+            onChooseFiles: { [weak self] in
+                #if !os(tvOS)
+                self?.presentDocumentPicker()
+                #else
+                self?.presentTVWebTransfer()
+                #endif
+            },
+            onConfirm: { [weak self] url in
+                self?.sideloadApp(at: url) { _ in }
+            }
+        )
+    }
+    
+    #if !os(tvOS)
+    private func presentDocumentPicker()
+    {
+        let supportedTypes = UTType.types(tag: "ipa", tagClass: .filenameExtension, conformingTo: nil)
+        
+        let documentPickerViewController = UIDocumentPickerViewController(forOpeningContentTypes: supportedTypes, asCopy: true)
+        documentPickerViewController.delegate = self
+        self.present(documentPickerViewController, animated: true, completion: nil)
+    }
+    #else
+    private func presentTVWebTransfer()
+    {
+        TVWebFileTransferManager.shared.startImport(
+            acceptedExtensions: ["ipa"],
+            title: "Sideload IPA",
+            presentingVC: self
+        ) { [weak self] fileURL in
+            guard let fileURL = fileURL, let self else { return }
+            InstallAppDialog.present(ipaURL: fileURL, from: self) { [weak self] in
                 self?.sideloadApp(at: fileURL) { result in
                     debugLog("Sideloaded app at \(fileURL) with result: \(result)")
                 }
             }
-            #endif
         }
     }
+    #endif
     
     func sideloadApp(at url: URL, completion: @escaping (Result<Void, Error>) -> Void)
     {
@@ -1175,7 +1217,9 @@ private extension MyAppsViewController
                     
             if !UserDefaults.standard.isAppLimitDisabled && UserDefaults.standard.activeAppsLimit != nil
             {
-                guard let appBundle = ALTApplication(fileURL: installedApp.fileURL) else { return finish(.failure(OperationError.invalidApp)) }
+                guard let appBundle = ALTApplication(fileURL: installedApp.fileURL) else {
+                    return finish(.failure(OperationError.invalidApp(reason: "Could not load app bundle at '\(installedApp.fileURL.lastPathComponent)'")))
+                }
                 
                 AppManager.shared.deactivateApps(for: appBundle, presentingViewController: self) { result in
                     installedApp.managedObjectContext?.perform {
@@ -1382,6 +1426,11 @@ private extension MyAppsViewController
                 }
             }))
             
+            if let popoverController = alertController.popoverPresentationController {
+                popoverController.sourceView = self.view
+                popoverController.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
+            }
+            
             self.present(alertController, animated: true, completion: nil)
         }
     }
@@ -1459,6 +1508,11 @@ private extension MyAppsViewController
                     self.collectionView.reloadSections([Section.activeApps.rawValue])
                 }
             }))
+            
+            if let popoverController = alertController.popoverPresentationController {
+                popoverController.sourceView = self.view
+                popoverController.sourceRect = CGRect(x: self.view.bounds.midX, y: self.view.bounds.midY, width: 0, height: 0)
+            }
             
             self.present(alertController, animated: true, completion: nil)
         }
@@ -1833,11 +1887,12 @@ extension MyAppsViewController
         case .activeApps, .inactiveApps:
             let footerView = collectionView.dequeueReusableSupplementaryView(ofKind: UICollectionView.elementKindSectionFooter, withReuseIdentifier: "InstalledAppsFooter", for: indexPath) as! InstalledAppsCollectionFooterView
             
-            guard let team = DatabaseManager.shared.activeTeam() else { return footerView }
+            guard let team = self.activeTeam else { return footerView }
             switch team.type
             {
             case .free:
-                let registeredAppIDs = team.appIDs.count
+                guard let managedTeam = Team.first(satisfying: NSPredicate(format: "%K == %@", #keyPath(Team.identifier), team.identifier), in: DatabaseManager.shared.viewContext) else { return footerView }
+                let registeredAppIDs = managedTeam.appIDs.count
                 
                 let maximumAppIDCount = 10
                 let remainingAppIDs = maximumAppIDCount - registeredAppIDs
@@ -2250,7 +2305,7 @@ extension MyAppsViewController: UICollectionViewDelegateFlowLayout
         
         func appIDsFooterSize() -> CGSize
         {
-            guard let _ = DatabaseManager.shared.activeTeam() else { return .zero }
+            guard let _ = self.activeTeam else { return .zero }
             
             // let indexPath = IndexPath(row: 0, section: section.rawValue)
             // let footerView = self.collectionView(collectionView, viewForSupplementaryElementOfKind: UICollectionView.elementKindSectionFooter, at: indexPath) as! InstalledAppsCollectionFooterView
@@ -2598,8 +2653,10 @@ extension MyAppsViewController: UIDocumentPickerDelegate
     {
         guard let fileURL = urls.first else { return }
         
-        self.sideloadApp(at: fileURL) { (result) in
-            debugLog("Sideloaded app at \(fileURL) with result: \(result)")
+        InstallAppDialog.present(ipaURL: fileURL, from: self) { [weak self] in
+            self?.sideloadApp(at: fileURL) { (result) in
+                debugLog("Sideloaded app at \(fileURL) with result: \(result)")
+            }
         }
     }
 }

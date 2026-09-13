@@ -36,7 +36,7 @@ final class StageBackupAppOperation: BasePipelineOperation<InstallAppOperationCo
         
         guard ALTApplication(fileURL: targetApp.fileURL) != nil else {
             debugLog("[StageBackupAppOperation] Error: ALTApplication invalid/not found at \(targetApp.fileURL.path)")
-            throw OperationError.appNotFound(name: targetApp.name)
+            throw OperationError.missingAppBundle(reason: "Could not find application bundle for '\(targetApp.name)' at '\(targetApp.fileURL.lastPathComponent)'")
         }
 
         self.setProgress(20)
@@ -46,7 +46,7 @@ final class StageBackupAppOperation: BasePipelineOperation<InstallAppOperationCo
 
         guard let sidebackupFileURL = Bundle.main.url(forResource: "SideBackup", withExtension: "ipa") else {
             debugLog("[StageBackupAppOperation] Error: SideBackup.ipa resource not found in main bundle")
-            throw OperationError.appNotFound(name: "SideBackup")
+            throw OperationError.invalidParameters("Resource 'SideBackup.ipa' could not be found in the main bundle.")
         }
         debugLog("[StageBackupAppOperation] Found SideBackup.ipa at \(sidebackupFileURL.path)")
 
@@ -57,7 +57,7 @@ final class StageBackupAppOperation: BasePipelineOperation<InstallAppOperationCo
         
         guard let unzippedAppBundle = Bundle(url: unzippedAppBundleURL) else {
             debugLog("[StageBackupAppOperation] Error: Failed to instantiate Bundle at \(unzippedAppBundleURL.path)")
-            throw OperationError.invalidApp
+            throw OperationError.missingAppBundle(reason: "Unzipped bundle directory could not be located at '\(unzippedAppBundleURL.lastPathComponent)'")
         }
 
         self.setProgress(70)
@@ -98,14 +98,14 @@ final class StageBackupAppOperation: BasePipelineOperation<InstallAppOperationCo
                 }
             }
 
-            try (infoDictionary as NSDictionary).write(to: unzippedAppBundle.infoPlistURL)
+            try InfoPlistParser(dictionary: infoDictionary).write(to: unzippedAppBundle.infoPlistURL)
             debugLog("[StageBackupAppOperation] Updated Info.plist written to \(unzippedAppBundle.infoPlistURL.path)")
         }
 
         self.setProgress(90)
         guard let sideBackupBundle = ALTApplication(fileURL: unzippedAppBundleURL) else {
             debugLog("[StageBackupAppOperation] Error: Failed to create ALTApplication for staged backup app at \(unzippedAppBundleURL.path)")
-            throw OperationError.invalidApp
+            throw OperationError.missingAppBundle(reason: "Failed to create ALTApplication for staged backup app at '\(unzippedAppBundleURL.lastPathComponent)'")
         }
         context.targetAppBundle = sideBackupBundle
         debugLog("[StageBackupAppOperation] Successfully set context.appBundle to staged SideBackup app ('\(sideBackupBundle.bundleIdentifier)')")

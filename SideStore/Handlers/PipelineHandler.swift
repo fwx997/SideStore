@@ -70,7 +70,7 @@ final class PipelineHandler: PipelineExecutionHandler,
     @MainActor
     func reviewPermissions(_ permissions: [ALTEntitlement], for app: AppProtocol, mode: PermissionReviewMode) async throws {
         guard let presenter = self.activePresenter else {
-            throw OperationError.invalidOperationContext("PipelineHandler: Cannot review permissions because presenting view controller is unavailable")
+            throw OperationError.invalidParameters("PipelineHandler: Cannot review permissions because presenting view controller is unavailable")
         }
         let reviewPermissionsViewController = ReviewPermissionsViewController(app: app, permissions: permissions, mode: mode)
         let navigationController = UINavigationController(rootViewController: reviewPermissionsViewController)
@@ -95,7 +95,7 @@ final class PipelineHandler: PipelineExecutionHandler,
         excessExtensions: Set<ALTApplication>
     ) async throws -> ExtensionRemovalDecision {
         guard let presenter = self.activePresenter else {
-            return .keepAll(useMainProfile: false)
+            return .removeSelected(excessExtensions)
         }
 
         return try await withCheckedThrowingContinuation { continuation in
@@ -258,7 +258,7 @@ final class PipelineHandler: PipelineExecutionHandler,
                 if !succeeded
                 {
                     let errMsg = "RemoveAppExtensionsOperation: unable to present dialog after 8 attempts. Did you move to different screen or background after starting the operation?"
-                    fail(OperationError.invalidOperationContext(errMsg))
+                    fail(OperationError.invalidParameters(errMsg))
                 }
                 // 若弹窗可见: 不 resume, 等待用户点击 (actions 调 finish/fail)
             }
@@ -344,6 +344,44 @@ final class PipelineHandler: PipelineExecutionHandler,
     }
     
     @MainActor
+    func resolveInfoPlistCustomization(
+        initialPlist: [String: Any],
+        initialBundleID: String,
+        appendTeamID: Bool,
+        installedAppIdentities: [String: String],
+        teamID: String
+    ) async throws -> (modifiedPlist: [String: Any], appendTeamID: Bool)? {
+        debugLog("[PipelineHandler] resolveInfoPlistCustomization: initialBundleID='\(initialBundleID)', teamID='\(teamID)', appendTeamID=\(appendTeamID)")
+        guard let presenter = self.activePresenter else {
+            debugLog("[PipelineHandler] resolveInfoPlistCustomization: activePresenter is nil!")
+            return (initialPlist, appendTeamID)
+        }
+        
+        let result: (modifiedPlist: [String: Any], appendTeamID: Bool)?
+        if UserDefaults.standard.preferSheetForInfoPlistCustomization {
+            result = await InfoPlistCustomizationSheetView.present(
+                from: presenter,
+                initialPlist: initialPlist,
+                initialBundleID: initialBundleID,
+                appendTeamID: appendTeamID,
+                installedAppIdentities: installedAppIdentities,
+                teamID: teamID
+            )
+        } else {
+            result = await InfoPlistCustomizationView.present(
+                from: presenter,
+                initialPlist: initialPlist,
+                initialBundleID: initialBundleID,
+                appendTeamID: appendTeamID,
+                installedAppIdentities: installedAppIdentities,
+                teamID: teamID
+            )
+        }
+        debugLog("[PipelineHandler] resolveInfoPlistCustomization result: modifiedPlist CFBundleIdentifier='\(result?.modifiedPlist["CFBundleIdentifier"] ?? "nil")', appendTeamID=\(result?.appendTeamID ?? false)")
+        return result
+    }
+
+    @MainActor
     func resolveBundleIDOverride(initialBundleID: String) async throws -> (customID: String, appendTeamID: Bool)? {
         guard let presenter = self.activePresenter else {
             return (initialBundleID, true)
@@ -358,19 +396,42 @@ final class PipelineHandler: PipelineExecutionHandler,
             preferredStyle: .alert
         )
         
+        let team = try await AuthManager.shared.getAuthenticatedTeam()
+        debugLog("[PipelineHandler] resolveBundleIDOverride: initialBundleID='\(initialBundleID)', teamID='\(team.identifier)', isAuthenticated=\(AuthManager.shared.isAuthenticated)")
+        let teamID = team.identifier
+        guard !teamID.isEmpty else {
+            debugLog("[PipelineHandler] resolveBundleIDOverride FAILED: teamID is empty")
+            throw OperationError.invalidParameters("Active developer team identifier is empty.")
+        }
+        let cleanInitialID: String = {
+            let trimmed = initialBundleID.trimmingCharacters(in: .whitespacesAndNewlines)
+            let base: String
+            if !teamID.isEmpty && trimmed.hasSuffix(".\(teamID)") {
+                base = String(trimmed.dropLast((".\(teamID)").count))
+            } else {
+                base = trimmed
+            }
+            let sanitized = InfoPlistParser.sanitizeBundleID(base)
+            verboseLog("[PipelineHandler] cleanInitialID: trimmed='\(trimmed)', base='\(base)', sanitized='\(sanitized)'")
+            return sanitized
+        }()
+
+        let checkboxView = AppendTeamIDCheckboxView(isChecked: true, teamID: teamID)
+        checkboxView.translatesAutoresizingMaskIntoConstraints = false
+
         alert.addTextField { textField in
-            textField.text = initialBundleID
+            let initialText = !teamID.isEmpty ? "\(cleanInitialID).\(teamID)" : cleanInitialID
+            verboseLog("[PipelineHandler] resolveBundleIDOverride: setting textField.text='\(initialText)'")
+            textField.text = initialText
             textField.autocapitalizationType = .none
             textField.autocorrectionType = .no
             textField.clearButtonMode = .whileEditing
+            checkboxView.attach(to: textField, teamID: teamID)
         }
         
         alert.addTextField { textField in
             textField.isUserInteractionEnabled = false
         }
-        
-        let checkboxView = AppendTeamIDCheckboxView(isChecked: true)
-        checkboxView.translatesAutoresizingMaskIntoConstraints = false
         
         _ = alert.view
         if let tf1 = alert.textFields?.first, let tf1View = tf1.superview {
@@ -415,9 +476,10 @@ final class PipelineHandler: PipelineExecutionHandler,
         
         return await withCheckedContinuation { continuation in
             let okAction = UIAlertAction(title: NSLocalizedString("Confirm", comment: ""), style: .default) { _ in
-                let text = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines)
-                let customID = (text?.isEmpty == false) ? text! : initialBundleID
+                let baseID = checkboxView.cleanBaseID()
+                let customID = InfoPlistParser.sanitizeBundleID(!baseID.isEmpty ? baseID : cleanInitialID)
                 let appendTeamID = checkboxView.isChecked
+                debugLog("[PipelineHandler] resolveBundleIDOverride confirmed: baseID='\(baseID)', customID='\(customID)', appendTeamID=\(appendTeamID)")
                 continuation.resume(returning: (customID, appendTeamID))
             }
             

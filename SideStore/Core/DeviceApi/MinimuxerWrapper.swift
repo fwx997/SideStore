@@ -163,8 +163,9 @@ extension MinimuxerError {
         case .invalidVPN(let reason):           return .invalidVPN(reason: reason)
         case .invalidPairing(_, let reason):    return .invalidPairingFile(reason: reason)
         case .notStarted(let reason):           return .minimuxerNotStarted(reason: reason)
-        case .pairingNotLoaded(let reason):     return .pairingNotComplete(reason: reason)
-        default:                                return .unknown(failureReason: self.localizedDescription)
+        case .pairingNotLoaded(let reason):            return .pairingNotComplete(reason: reason)
+        case .connectionModeNotConfigured(let reason): return .invalidParameters(reason)
+        default:                                       return .invalidParameters(self.description)
         }
     }
 }
@@ -298,23 +299,26 @@ func installAppBundle(_ bundleId: String, appName: String) async throws {
 }
 
 @discardableResult
-func fetchUDID(useStatic: Bool = false) async throws -> String? {
+func fetchUDID(forceLive: Bool = false) async throws -> String {
     defer { debugLog("[SideStore] fetchUDID() completed") }
     #if targetEnvironment(simulator)
     debugLog("[SideStore] fetchUDID() is no-op on simulator")
-    return "XXXXX-XXXX-XXXXX-XXXX"
+    return "00008030-001234567890ABCD"
+    
     #else
-    debugLog("[SideStore] fetchUDID() invoked")
-    let result = try? await withRemotePairingRetry {
+    if !forceLive, let cachedUDID = Keychain.shared.deviceUDID, !cachedUDID.isEmpty {
+        debugLog("[SideStore] fetchUDID() returning cached UDID from Keychain: \(cachedUDID)")
+        return cachedUDID
+    }
+    debugLog("[SideStore] fetchUDID() invoked (forceLive: \(forceLive))")
+    let result = try await withRemotePairingRetry {
         try await minimuxer.core.fetchUDID()
     }
-    if let udid = result ?? nil, !udid.isEmpty, udid != "XXXXX-XXXX-XXXXX-XXXX" {
-        return udid
+    guard let udid = result, !udid.isEmpty else {
+        throw OperationError.unknownUDID(reason: "Minimuxer returned empty UDID.")
     }
-    if useStatic {
-        return PairingFileManager.shared.pairingUDID
-    }
-    return nil
+    Keychain.shared.deviceUDID = udid
+    return udid
     #endif
 }
 
@@ -480,7 +484,7 @@ public final class WirelessPairWrapper {
             }
         }
         #else
-        completion(.failure(OperationError.invalidPairingFile()))
+        completion(.failure(OperationError.invalidPairingFile(reason: "Wireless pairing is not supported on simulator.")))
         #endif
     }
 
@@ -514,7 +518,7 @@ public final class WirelessPairWrapper {
             }
         }
         #else
-        completion(.failure(OperationError.invalidPairingFile()))
+        completion(.failure(OperationError.invalidPairingFile(reason: "Wireless pairing is not supported on simulator.")))
         #endif
     }
     

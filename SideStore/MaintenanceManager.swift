@@ -36,7 +36,7 @@ public final class MaintenanceManager {
 
     private init() {}
 
-    public func performMaintenanceIfNeeded() {
+    public func performMaintenanceIfNeeded() async {
         let current = completedCounter
         guard current < Self.currentMaintenanceCounter else { return }
 
@@ -45,10 +45,10 @@ public final class MaintenanceManager {
             switch pass {
             case 1:
                 Keychain.shared.clearAll()
-                AuthManager.shared.signOut(keepCertificate: false, keepAnisetteData: false)
+                await AuthManager.shared.signOut(keepCertificate: false, keepAnisetteData: false)
             case 2:
                 AnisetteDataManager.shared.clearCache()
-                AuthManager.shared.signOut(keepCertificate: true, keepAnisetteData: false)
+                await AuthManager.shared.signOut(keepCertificate: true, keepAnisetteData: false)
             case 3:
                 UserDefaults.standard.tunnelOverridePeerIp = nil
             default:

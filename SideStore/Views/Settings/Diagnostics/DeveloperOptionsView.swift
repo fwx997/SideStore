@@ -544,14 +544,16 @@ struct DeveloperOptionsView: View {
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: [UTType(filenameExtension: "sideconf")!, .json], asCopy: false)
         ImportExport.documentPickerHandler = DocumentPickerHandler { selectedURL in
             guard let url = selectedURL else { return }
-            do {
-                try ImportExport.importAccountJSON(from: url)
-                let email = AuthManager.shared.currentAppleID ?? ""
-                let toastView = ToastView(text: NSLocalizedString("Successfully imported '\(email)'!", comment: ""), detailText: "SideStore should be fully operational!")
-                toastView.show(in: top)
-            } catch {
-                let toastView = ToastView(text: NSLocalizedString("Failed to import account JSON!", comment: ""), detailText: error.localizedDescription)
-                toastView.show(in: top)
+            Task { @MainActor in
+                do {
+                    try await ImportExport.importAccountJSON(from: url)
+                    let email = AuthManager.shared.currentAppleID ?? ""
+                    let toastView = ToastView(text: NSLocalizedString("Successfully imported '\(email)'!", comment: ""), detailText: "SideStore should be fully operational!")
+                    toastView.show(in: top)
+                } catch {
+                    let toastView = ToastView(text: NSLocalizedString("Failed to import account JSON!", comment: ""), detailText: error.localizedDescription)
+                    toastView.show(in: top)
+                }
             }
         }
         picker.delegate = ImportExport.documentPickerHandler
@@ -563,14 +565,16 @@ struct DeveloperOptionsView: View {
             presentingVC: top
         ) { selectedURL in
             guard let url = selectedURL else { return }
-            do {
-                try ImportExport.importAccountJSON(from: url)
-                let email = AuthManager.shared.currentAppleID ?? ""
-                let toastView = ToastView(text: NSLocalizedString("Successfully imported '\(email)'!", comment: ""), detailText: "SideStore should be fully operational!")
-                toastView.show(in: top)
-            } catch {
-                let toastView = ToastView(text: NSLocalizedString("Failed to import account JSON!", comment: ""), detailText: error.localizedDescription)
-                toastView.show(in: top)
+            Task { @MainActor in
+                do {
+                    try await ImportExport.importAccountJSON(from: url)
+                    let email = AuthManager.shared.currentAppleID ?? ""
+                    let toastView = ToastView(text: NSLocalizedString("Successfully imported '\(email)'!", comment: ""), detailText: "SideStore should be fully operational!")
+                    toastView.show(in: top)
+                } catch {
+                    let toastView = ToastView(text: NSLocalizedString("Failed to import account JSON!", comment: ""), detailText: error.localizedDescription)
+                    toastView.show(in: top)
+                }
             }
         }
         #endif

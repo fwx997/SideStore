@@ -184,7 +184,7 @@ public class DatabaseManager: @unchecked Sendable
         return self.persistentContainer.viewContext
     }
     
-    public func activeAccount(in context: NSManagedObjectContext = DatabaseManager.shared.viewContext) -> Account?
+    public func activeAccount(in context: NSManagedObjectContext) -> Account?
     {
         let predicate = NSPredicate(format: "%K == YES", #keyPath(Account.isActiveAccount))
         
@@ -192,7 +192,7 @@ public class DatabaseManager: @unchecked Sendable
         return activeAccount
     }
     
-    public func activeTeam(in context: NSManagedObjectContext = DatabaseManager.shared.viewContext) -> Team?
+    public func activeTeam(in context: NSManagedObjectContext) -> Team?
     {
         let predicate = NSPredicate(format: "%K == YES", #keyPath(Team.isActiveTeam))
         

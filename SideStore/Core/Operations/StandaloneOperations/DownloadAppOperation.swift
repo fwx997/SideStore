@@ -88,8 +88,7 @@ final class DownloadAppOperation: BasePipelineOperation<InstallAppOperationConte
                 appVersion = version
             } else if let storeApp = app as? StoreApp {
                 guard let latestVersion = storeApp.latestAvailableVersion else {
-                    let failureReason = String(format: NSLocalizedString("The latest version of %@ could not be downloaded.", comment: ""), self.appName)
-                    throw OperationError.unknown(failureReason: failureReason)
+                    throw OperationError.missingUpdate(appName: self.appName)
                 }
 
                 // Attempt to download latest _available_ version, and fall back to older versions if necessary.
@@ -149,7 +148,7 @@ final class DownloadAppOperation: BasePipelineOperation<InstallAppOperationConte
     
     private func download(@Managed _ app: AppProtocol) async throws -> ALTApplication {
         guard let sourceURL = self.sourceURL else {
-            throw OperationError.appNotFound(name: self.appName)
+            throw OperationError.invalidParameters("Missing download URL for '\(self.appName)'.")
         }
         if let appVersion = app as? AppVersion {
             // All downloads go through this path, and `app` is
@@ -161,11 +160,11 @@ final class DownloadAppOperation: BasePipelineOperation<InstallAppOperationConte
         let appBundle = try await downloadIPA(from: sourceURL)
         
         if self.context.bundleIdentifier == StoreApp.dolphinAppID, self.context.bundleIdentifier != appBundle.bundleIdentifier {
-            if var infoPlist = NSDictionary(contentsOf: appBundle.bundle.infoPlistURL) as? [String: Any] {
+            if var parser = try? InfoPlistParser(plistURL: appBundle.bundle.infoPlistURL) {
                 // Manually update the app's bundle identifier to match the one specified in the source.
                 // This allows people who previously installed the app to still update and refresh normally.
-                infoPlist[kCFBundleIdentifierKey as String] = StoreApp.dolphinAppID
-                (infoPlist as NSDictionary).write(to: appBundle.bundle.infoPlistURL, atomically: true)
+                parser.set(value: StoreApp.dolphinAppID, for: kCFBundleIdentifierKey as String)
+                try? parser.write(to: appBundle.bundle.infoPlistURL)
             }
         }
         
@@ -178,7 +177,9 @@ final class DownloadAppOperation: BasePipelineOperation<InstallAppOperationConte
         try FileManager.default.moveItem(at: appBundle.fileURL, to: self.destinationURL, shouldReplace: true)
         debugLog("[DownloadAppOperation] Moving bundle to destination succeeded")
         
-        guard let movedAppBundle = ALTApplication(fileURL: self.destinationURL) else { throw OperationError.invalidApp }
+        guard let movedAppBundle = ALTApplication(fileURL: self.destinationURL) else {
+            throw OperationError.missingAppBundle(reason: "Could not load moved app bundle at '\(self.destinationURL.lastPathComponent)'")
+        }
         self.setProgress(100)
         return movedAppBundle
     }
@@ -202,7 +203,7 @@ final class DownloadAppOperation: BasePipelineOperation<InstallAppOperationConte
         
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: fileURL.path, isDirectory: &isDirectory) else {
-            throw OperationError.appNotFound(name: self.appName)
+            throw OperationError.missingAppBundle(reason: "File does not exist at '\(fileURL.lastPathComponent)'")
         }
         
         try FileManager.default.createDirectory(at: self.temporaryDirectory, withIntermediateDirectories: true, attributes: nil)
@@ -211,7 +212,9 @@ final class DownloadAppOperation: BasePipelineOperation<InstallAppOperationConte
         
         if isDirectory.boolValue {
             // Directory, so assuming this is .app bundle.
-            guard Bundle(url: fileURL) != nil else { throw OperationError.invalidApp }
+            guard Bundle(url: fileURL) != nil else {
+                throw OperationError.missingAppBundle(reason: "Directory at '\(fileURL.lastPathComponent)' is not a valid bundle directory")
+            }
             
             appBundleURL = self.temporaryDirectory.appendingPathComponent(fileURL.lastPathComponent)
             try FileManager.default.copyItem(at: fileURL, to: appBundleURL)
@@ -226,7 +229,9 @@ final class DownloadAppOperation: BasePipelineOperation<InstallAppOperationConte
             self.context.ipaURL = ipaURL
         }
         
-        guard let appBundle = ALTApplication(fileURL: appBundleURL) else { throw OperationError.invalidApp }
+        guard let appBundle = ALTApplication(fileURL: appBundleURL) else {
+            throw OperationError.missingAppBundle(reason: "Could not load unzipped app bundle at '\(appBundleURL.lastPathComponent)'")
+        }
 
         // perform cleanup of the temp files
         if !sourceURL.isFileURL && FileManager.default.fileExists(atPath: fileURL.path) {

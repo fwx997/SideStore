@@ -72,13 +72,10 @@ final class ScheduleExpirationWarningNotificationOperation: BaseStandaloneOperat
             let trigger = UNTimeIntervalNotificationTrigger(timeInterval: triggerInterval, repeats: false)
             let request = UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
 
-            // zh-patch: 通知权限未授权时 center.add 抛 UNErrorDomain 错误, 会把已经成功的
-            // refresh 整个标记为 FAILED (实际续签已完成)。过期提醒属尽力而为, 失败只记日志。
             do {
                 try await center.add(request)
             } catch {
-                debugLog("[ScheduleExpirationWarningNotificationOperation] zh-patch: failed to schedule expiration reminder (notification permission denied?): \(error)")
-                break
+                debugLog("[ScheduleExpirationWarningNotificationOperation] Failed to schedule notification '\(identifier)': \(error)")
             }
         }
         #else
