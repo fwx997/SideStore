@@ -103,17 +103,49 @@ final class PipelineHandler: PipelineExecutionHandler,
             // 但 alert.view.window == nil), 管线会永远等一个等不到的用户点击 → 卡死无进度。
             // 修复: 展示后检查可见性, 不可见则自动重建并重试 (最多 8 次); 重试仍失败才报错。
             var resumed = false
+            // zh-patch v3: presenter 不在窗口层级/展示槽位被占时, UIKit 会静默丢弃 present
+            // (重装后首轮必现, 8 轮全失败)。此时改用独立 UIWindow 承载弹窗, 不依赖宿主 VC 状态。
+            var fallbackWindow: UIWindow? = nil
+
+            func cleanupFallback()
+            {
+                fallbackWindow?.isHidden = true
+                fallbackWindow = nil
+            }
+            func currentBase() -> UIViewController
+            {
+                if let window = fallbackWindow, let root = window.rootViewController {
+                    return root
+                }
+                return presenter
+            }
+            func ensureFallbackWindow()
+            {
+                guard fallbackWindow == nil else { return }
+                let window = UIWindow(frame: UIScreen.main.bounds)
+                if let scene = presenter.view.window?.windowScene
+                    ?? UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+                        .first(where: { $0.activationState == .foregroundActive }) {
+                    window.windowScene = scene
+                }
+                window.windowLevel = .alert + 100
+                window.rootViewController = UIViewController()
+                window.makeKeyAndVisible()
+                fallbackWindow = window
+            }
 
             func finish(_ result: ExtensionRemovalDecision)
             {
                 guard !resumed else { return }
                 resumed = true
+                cleanupFallback()
                 continuation.resume(returning: result)
             }
             func fail(_ error: Error)
             {
                 guard !resumed else { return }
                 resumed = true
+                cleanupFallback()
                 continuation.resume(throwing: error)
             }
 
@@ -154,16 +186,17 @@ final class PipelineHandler: PipelineExecutionHandler,
                     popoverContentController.modalPresentationStyle = .popover
 
                     if let popoverPresentationController = popoverContentController.popoverPresentationController {
-                        popoverPresentationController.sourceView = presenter.view
+                        let base = currentBase()
+                        popoverPresentationController.sourceView = base.view
                         popoverPresentationController.sourceRect = CGRect(x: 50, y: 50, width: 4, height: 4)
                         popoverPresentationController.delegate = popoverContentController
-                        presenter.present(popoverContentController, animated: true)
+                        base.present(popoverContentController, animated: true)
                     } else {
                         fail(OperationError.invalidParameters("RemoveAppExtensionsOperation: popoverContentController.popoverPresentationController is nil"))
                     }
                     #else
                     popoverContentController.modalPresentationStyle = .blurOverFullScreen
-                    presenter.present(popoverContentController, animated: true)
+                    currentBase().present(popoverContentController, animated: true)
                     #endif
                 })
 
@@ -178,11 +211,22 @@ final class PipelineHandler: PipelineExecutionHandler,
                     attempts += 1
                     let alertController = makeAlert()
 
-                    // zh-patch v2: 不再等待 present 完成回调 —— LC 内嵌环境下 presentation 槽位被占用
-                    // 或宿主 VC 不在窗口层级时, UIKit 直接丢弃展示且回调不触发, 内层续体泄漏导致
-                    // 管线永久卡死 (日志: SWIFT TASK CONTINUATION MISUSE)。改为: 展示后有界轮询
-                    // view.window (2.5s), 不依赖任何回调, 超时进入下一轮重试。
-                    presenter.present(alertController, animated: true, completion: nil)
+                    // zh-patch v3: 首轮优先常规 presenter; presenter 不在窗口层级或上一轮展示
+                    // 失败 (槽位被占/宿主状态异常, UIKit 静默丢弃) 时, 改用独立 UIWindow 承载 —
+                    // 绕开宿主 VC 状态, 重装后首轮也能可靠弹出 (v23 实测首轮 8 轮全被丢弃)。
+                    if attempts == 1, presenter.view.window != nil
+                    {
+                        presenter.present(alertController, animated: true, completion: nil)
+                    }
+                    else
+                    {
+                        if let presentingVC = alertController.presentingViewController
+                        {
+                            presentingVC.dismiss(animated: false, completion: nil)
+                        }
+                        ensureFallbackWindow()
+                        currentBase().present(alertController, animated: true, completion: nil)
+                    }
 
                     var waited = 0.0
                     while waited < 2.5
@@ -203,10 +247,10 @@ final class PipelineHandler: PipelineExecutionHandler,
                     }
 
                     debugLog("[PipelineHandler] zh-patch: dialog presentation invisible (attempt \(attempts)/8), retrying...")
-                    // zh-patch v2: 重试前清理已展示但不可见的旧弹窗, 避免重试叠加出双弹窗
-                    if alertController.presentingViewController === presenter
+                    // zh-patch v2/v3: 重试前清理已展示但不可见的旧弹窗, 避免重试叠加出双弹窗
+                    if let presentingVC = alertController.presentingViewController
                     {
-                        alertController.dismiss(animated: false, completion: nil)
+                        presentingVC.dismiss(animated: false, completion: nil)
                     }
                     try? await Task.sleep(nanoseconds: 400_000_000)
                 }
