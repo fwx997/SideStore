@@ -25,7 +25,11 @@ public extension UIColor
     convenience init?(hexString: String)
     {
         let hex = hexString.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
-        guard let int32 = Scanner(string: hex).scanInt32(representation: .hexadecimal), case let int = UInt32(int32) else { return nil }
+        // Upstream issue #1527: scanInt32 overflows for 8-digit hex >= 0x80000000 (e.g. opaque
+        // ARGB colors "FF5733FF"), decoding them all to translucent white. Int64 holds every
+        // 32-bit hex value, so scan Int64 and range-check before the UInt32 cast.
+        guard let scanned = Scanner(string: hex).scanInt64(representation: .hexadecimal),
+              scanned >= 0, scanned <= UInt32.max, case let int = UInt32(scanned) else { return nil }
         
         let a, r, g, b: UInt32
         switch hex.count {

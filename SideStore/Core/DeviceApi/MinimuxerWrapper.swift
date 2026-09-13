@@ -101,6 +101,21 @@ private func withRemotePairingRetry<T>(_ operation: () async throws -> T) async 
     }
 }
 
+// zh-patch: 隧道链路上操作"中途"的瞬断上游不重试 (连接阶段有重试, action 阶段没有)。
+// 典型: refresh 时 misagent 装描述文件 ConnectionReset by peer (上游 issue #1491)。
+// 与 SendAppOperation 的 AFC 重试同模式: 识别瞬断类 socket 错误, 2 秒后重试一次。
+func withTransientSocketRetry<T>(_ operation: () async throws -> T) async throws -> T {
+    do {
+        return try await operation()
+    } catch {
+        let message = String(describing: error)
+        guard message.contains("ConnectionReset") || message.contains("BrokenPipe") || message.contains("Connection reset") else { throw error }
+        debugLog("[SideStore] zh-patch: transient socket failure on tunnel op, retrying once in 2s: \(message.prefix(160))")
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        return try await operation()
+    }
+}
+
 public var minimuxerStatusPublisher: AnyPublisher<Result<Bool, Error>, Never> {
     minimuxer.core.statusPublisher
         .map { result in
@@ -200,8 +215,10 @@ func installProvisioningProfiles(_ profileData: Data) async throws {
     debugLog("[SideStore] installProvisioningProfiles(profileData) is no-op on simulator")
     #else
     debugLog("[SideStore] installProvisioningProfiles(profileData) invoked")
-    try await withRemotePairingRetry {
-        try await minimuxer.core.installProvisioningProfile(profile: profileData)
+    try await withTransientSocketRetry {
+        try await withRemotePairingRetry {
+            try await minimuxer.core.installProvisioningProfile(profile: profileData)
+        }
     }
     #endif
 }
@@ -212,8 +229,10 @@ func removeProvisioningProfile(_ id: String) async throws {
     debugLog("[SideStore] removeProvisioningProfile(id) is no-op on simulator")
     #else
     debugLog("[SideStore] removeProvisioningProfile(id) invoked")
-    try await withRemotePairingRetry {
-        try await minimuxer.core.removeProvisioningProfile(id: id)
+    try await withTransientSocketRetry {
+        try await withRemotePairingRetry {
+            try await minimuxer.core.removeProvisioningProfile(id: id)
+        }
     }
     #endif
 }
