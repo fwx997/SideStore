@@ -34,29 +34,58 @@ final class PairingFileManager: NSObject {
         }
     }
 
+    private nonisolated static func pairingMode(of contents: String) -> PairingProtocol? {
+        guard let parsed = try? PairingFileParser.parse(content: contents) else { return nil }
+        return parsed.mode
+    }
+
     nonisolated func fetchPairingFile() -> String? {
         let fm = FileManager.default
         let documentsPath = fm.documentsDirectory.appendingPathComponent("/\(Self.pairingFileName)")
+        // zh-patch: Documents 里被跳过的 lockdown 文件, 无 RP 来源时兜底用 (见下)
+        var lockdownFallback: String? = nil
         if fm.fileExists(atPath: documentsPath.path),
-           let contents = try? String(contentsOf: documentsPath), !contents.isEmpty 
+           let contents = try? String(contentsOf: documentsPath), !contents.isEmpty
         {
-            return contents
+            // zh-patch: iOS 17+ 上 lockdownd 拒绝传统 lockdown TLS 直连 (连接即被断开,
+            // AFC/instproxy 全部瞬间 Broken pipe), lockdown 格式文件只会让应用进入
+            // 不可用的 .lockdown 传输模式。检测到时跳过 Documents 里的 lockdown 文件,
+            // 回退到 RP 格式来源 (LC+SideStore 场景即 Sideloadly 预信任的嵌入文件)。
+            if #available(iOS 17, *), Self.pairingMode(of: contents) == .lockdown {
+                debugLog("[PairingFile] zh-patch: Documents pairing file is lockdown-format; skipping on iOS 17+ (RP transport required)")
+                lockdownFallback = contents
+            } else {
+                return contents
+            }
         }
         if let url = Bundle.main.url(forResource: AppConstants.Pairing.bundleResourceName, withExtension: AppConstants.Pairing.fileExtension),
            fm.fileExists(atPath: url.path),
            let data = fm.contents(atPath: url.path),
            let contents = String(data: data, encoding: .utf8),
-           !contents.isEmpty, 
-           !UserDefaults.standard.isPairingReset 
-        { 
-            return contents 
+           !contents.isEmpty
+        {
+            // zh-patch: 嵌入的 RP 格式配对文件 (Sideloadly 每次安装重新生成并预信任) 始终可用,
+            // 不受 isPairingReset 门控限制 — 该门控针对的是手动导入的 lockdown 文件流程。
+            if Self.pairingMode(of: contents) == .rppairing {
+                debugLog("[PairingFile] zh-patch: using embedded RP-format pairing file (bypassing isPairingReset gate)")
+                return contents
+            }
+            if !UserDefaults.standard.isPairingReset {
+                return contents
+            }
         }
         if let plistString = Bundle.main.object(forInfoDictionaryKey: AppConstants.Pairing.bundleResourceName) as? String,
-           !plistString.isEmpty, 
-           !plistString.contains(AppConstants.Pairing.placeholderString), 
-           !UserDefaults.standard.isPairingReset 
-        { 
-            return plistString 
+           !plistString.isEmpty,
+           !plistString.contains(AppConstants.Pairing.placeholderString),
+           !UserDefaults.standard.isPairingReset
+        {
+            return plistString
+        }
+        if let lockdownFallback = lockdownFallback {
+            // zh-patch: 没有任何 RP 来源时兜底返回 lockdown 文件, 保持旧行为避免配对弹窗死循环;
+            // 此状态下 iOS 17+ 的 AFC 仍会失败, 需从日志排查 (应改用 RP 格式配对文件)。
+            debugLog("[PairingFile] zh-patch: no RP-format pairing source found; falling back to lockdown file (transport may be unavailable on iOS 17+)")
+            return lockdownFallback
         }
         return nil
     }
