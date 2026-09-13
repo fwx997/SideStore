@@ -171,32 +171,47 @@ final class PipelineHandler: PipelineExecutionHandler,
             }
 
             Task { @MainActor in
+                var succeeded = false
                 var attempts = 0
-                while attempts < 8
+                while attempts < 8, !succeeded
                 {
                     attempts += 1
                     let alertController = makeAlert()
 
-                    let visible: Bool = await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
-                        presenter.present(alertController, animated: true) {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                                // 真正可见 = alert 的 view 已挂到某个 window 上
-                                c.resume(returning: alertController.view.window != nil)
-                            }
+                    // zh-patch v2: 不再等待 present 完成回调 —— LC 内嵌环境下 presentation 槽位被占用
+                    // 或宿主 VC 不在窗口层级时, UIKit 直接丢弃展示且回调不触发, 内层续体泄漏导致
+                    // 管线永久卡死 (日志: SWIFT TASK CONTINUATION MISUSE)。改为: 展示后有界轮询
+                    // view.window (2.5s), 不依赖任何回调, 超时进入下一轮重试。
+                    presenter.present(alertController, animated: true, completion: nil)
+
+                    var waited = 0.0
+                    while waited < 2.5
+                    {
+                        if alertController.view.window != nil
+                        {
+                            succeeded = true
+                            break
                         }
+                        try? await Task.sleep(nanoseconds: 200_000_000)
+                        waited += 0.2
                     }
 
-                    if visible
+                    if succeeded
                     {
                         // 展示成功且可见, 等待用户选择 (actions 负责 resume)
                         break
                     }
 
                     debugLog("[PipelineHandler] zh-patch: dialog presentation invisible (attempt \(attempts)/8), retrying...")
-                    try? await Task.sleep(nanoseconds: 600_000_000)
+                    // zh-patch v2: 重试前清理已展示但不可见的旧弹窗, 避免重试叠加出双弹窗
+                    if alertController.presentingViewController === presenter
+                    {
+                        alertController.dismiss(animated: false, completion: nil)
+                    }
+                    try? await Task.sleep(nanoseconds: 400_000_000)
                 }
 
-                if attempts >= 8
+                if !succeeded
                 {
                     let errMsg = "RemoveAppExtensionsOperation: unable to present dialog after 8 attempts. Did you move to different screen or background after starting the operation?"
                     fail(OperationError.invalidOperationContext(errMsg))
