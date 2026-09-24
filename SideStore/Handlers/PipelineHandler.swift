@@ -345,23 +345,27 @@ final class PipelineHandler: PipelineExecutionHandler,
     
     @MainActor
     func resolveInfoPlistCustomization(
-        initialPlist: [String: Any],
+        targets: [InfoPlistTarget],
         initialBundleID: String,
         appendTeamID: Bool,
         installedAppIdentities: [String: String],
         teamID: String
-    ) async throws -> (modifiedPlist: [String: Any], appendTeamID: Bool)? {
-        debugLog("[PipelineHandler] resolveInfoPlistCustomization: initialBundleID='\(initialBundleID)', teamID='\(teamID)', appendTeamID=\(appendTeamID)")
+    ) async throws -> (modifiedPlists: [String: [String: any Sendable]], appendTeamID: Bool)? {
+        debugLog("[PipelineHandler] resolveInfoPlistCustomization (targets: \(targets.count)): initialBundleID='\(initialBundleID)', teamID='\(teamID)', appendTeamID=\(appendTeamID)")
         guard let presenter = self.activePresenter else {
             debugLog("[PipelineHandler] resolveInfoPlistCustomization: activePresenter is nil!")
-            return (initialPlist, appendTeamID)
+            var fallback: [String: [String: any Sendable]] = [:]
+            for t in targets {
+                fallback[t.id] = t.initialPlist
+            }
+            return (fallback, appendTeamID)
         }
-        
-        let result: (modifiedPlist: [String: Any], appendTeamID: Bool)?
+
+        let result: (modifiedPlists: [String: [String: any Sendable]], appendTeamID: Bool)?
         if UserDefaults.standard.preferSheetForInfoPlistCustomization {
             result = await InfoPlistCustomizationSheetView.present(
                 from: presenter,
-                initialPlist: initialPlist,
+                targets: targets,
                 initialBundleID: initialBundleID,
                 appendTeamID: appendTeamID,
                 installedAppIdentities: installedAppIdentities,
@@ -370,15 +374,90 @@ final class PipelineHandler: PipelineExecutionHandler,
         } else {
             result = await InfoPlistCustomizationView.present(
                 from: presenter,
-                initialPlist: initialPlist,
+                targets: targets,
                 initialBundleID: initialBundleID,
                 appendTeamID: appendTeamID,
                 installedAppIdentities: installedAppIdentities,
                 teamID: teamID
             )
         }
-        debugLog("[PipelineHandler] resolveInfoPlistCustomization result: modifiedPlist CFBundleIdentifier='\(result?.modifiedPlist["CFBundleIdentifier"] ?? "nil")', appendTeamID=\(result?.appendTeamID ?? false)")
+        debugLog("[PipelineHandler] resolveInfoPlistCustomization result: \(result?.modifiedPlists.count ?? 0) target(s) returned, appendTeamID=\(result?.appendTeamID ?? false)")
         return result
+    }
+
+    @MainActor
+    func resolveInfoPlistCustomization(
+        initialPlist: [String: any Sendable],
+        initialBundleID: String,
+        appendTeamID: Bool,
+        installedAppIdentities: [String: String],
+        teamID: String
+    ) async throws -> (modifiedPlist: [String: any Sendable], appendTeamID: Bool)? {
+        let target = InfoPlistTarget(
+            id: initialBundleID,
+            name: (initialPlist["CFBundleDisplayName"] as? String) ?? (initialPlist["CFBundleName"] as? String) ?? initialBundleID,
+            isExtension: false,
+            initialPlist: initialPlist
+        )
+        guard let result = try await resolveInfoPlistCustomization(
+            targets: [target],
+            initialBundleID: initialBundleID,
+            appendTeamID: appendTeamID,
+            installedAppIdentities: installedAppIdentities,
+            teamID: teamID
+        ) else { return nil }
+        let plist = result.modifiedPlists[initialBundleID] ?? initialPlist
+        return (plist, result.appendTeamID)
+    }
+
+
+    @MainActor
+    func resolveEntitlementsCustomization(
+        targets: [EntitlementsTarget],
+        teamType: ALTTeamType
+    ) async throws -> [String: [String: any Sendable]]? {
+        debugLog("[PipelineHandler] resolveEntitlementsCustomization: targets=\(targets.count), teamType=\(teamType.displayName)")
+        guard let presenter = self.activePresenter else {
+            debugLog("[PipelineHandler] resolveEntitlementsCustomization: activePresenter is nil!")
+            var fallback: [String: [String: any Sendable]] = [:]
+            for t in targets {
+                fallback[t.id] = t.initialEntitlements
+            }
+            return fallback
+        }
+
+        let result: [String: [String: any Sendable]]?
+        if UserDefaults.standard.preferSheetForEntitlementsCustomization {
+            result = await EntitlementsCustomizationSheetView.present(
+                from: presenter,
+                targets: targets,
+                teamType: teamType
+            )
+        } else {
+            result = await EntitlementsCustomizationView.present(
+                from: presenter,
+                targets: targets,
+                teamType: teamType
+            )
+        }
+        debugLog("[PipelineHandler] resolveEntitlementsCustomization result: \(result?.count) target(s) returned")
+        return result
+    }
+
+    @MainActor
+    func resolveEntitlementsCustomization(
+        initialEntitlements: [String: any Sendable],
+        bundleID: String,
+        teamType: ALTTeamType
+    ) async throws -> [String: any Sendable]? {
+        let target = EntitlementsTarget(
+            id: bundleID,
+            name: bundleID,
+            isExtension: false,
+            initialEntitlements: initialEntitlements
+        )
+        let result = try await resolveEntitlementsCustomization(targets: [target], teamType: teamType)
+        return result?[bundleID]
     }
 
     @MainActor
@@ -518,6 +597,154 @@ final class PipelineHandler: PipelineExecutionHandler,
             })
             
             presenter.present(alert, animated: true)
+        }
+    }
+
+    @MainActor
+    func resolveAppIconCustomization(appName: String) async throws -> URL? {
+        guard let presenter = self.activePresenter else {
+            return nil
+        }
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let title = NSLocalizedString("Customize App Icon", comment: "")
+            let message = String(format: NSLocalizedString("Would you like to choose a custom icon for '%@' or keep the original icon?", comment: ""), appName)
+
+            let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+
+            alert.addAction(UIAlertAction(title: NSLocalizedString("Choose from Photos", comment: ""), style: .default) { _ in
+                #if !os(tvOS)
+                let pickerDelegate = ImagePickerDelegateHandler { image in
+                    guard let image = image,
+                          let icon = image.resizing(toFill: CGSize(width: 256, height: 256)),
+                          let iconData = icon.pngData() else {
+                        continuation.resume(returning: nil)
+                        return
+                    }
+                    let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("CustomIcon_\(UUID().uuidString).png")
+                    do {
+                        try iconData.write(to: tempURL, options: .atomic)
+                        continuation.resume(returning: tempURL)
+                    } catch {
+                        continuation.resume(throwing: error)
+                    }
+                } onCancel: {
+                    continuation.resume(returning: nil)
+                }
+
+                let imagePicker = UIImagePickerController()
+                imagePicker.allowsEditing = true
+                imagePicker.delegate = pickerDelegate
+                objc_setAssociatedObject(imagePicker, "pickerDelegate", pickerDelegate, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+                presenter.present(imagePicker, animated: true)
+                #else
+                TVWebFileTransferManager.shared.startImport(
+                    acceptedExtensions: ["png", "jpg", "jpeg"],
+                    title: "Upload Custom App Icon",
+                    presentingVC: presenter
+                ) { fileURL in
+                    guard let fileURL = fileURL,
+                          let data = try? Data(contentsOf: fileURL),
+                          let image = UIImage(data: data),
+                          let icon = image.resizing(toFill: CGSize(width: 256, height: 256)),
+                          let iconData = icon.pngData() else {
+                        continuation.resume(returning: nil)
+                        return
+                    }
+                    let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("CustomIcon_\(UUID().uuidString).png")
+                    do {
+                        try iconData.write(to: tempURL, options: .atomic)
+                        continuation.resume(returning: tempURL)
+                    } catch {
+                        continuation.resume(throwing: error)
+                    }
+                }
+                #endif
+            })
+
+            alert.addAction(UIAlertAction(title: NSLocalizedString("Keep Original Icon", comment: ""), style: .default) { _ in
+                continuation.resume(returning: nil)
+            })
+
+            alert.addAction(UIAlertAction(title: UIAlertAction.cancel.title, style: .cancel) { _ in
+                continuation.resume(throwing: OperationError.cancelled)
+            })
+
+            presenter.present(alert, animated: true)
+        }
+    }
+
+    @MainActor
+    func resolveProvisioningProfileCustomization(appName: String, bundleID: String) async throws -> ProfileCustomizationChoice? {
+        guard let presenter = self.activePresenter else {
+            return .defaultProfile
+        }
+
+        let allProfiles = ProfileManager.shared.getAllLocalProfiles()
+        guard !allProfiles.isEmpty else {
+            return .defaultProfile
+        }
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let title = NSLocalizedString("Select Provisioning Profile", comment: "")
+            let message = String(format: NSLocalizedString("Choose a provisioning profile for '%@' (%@), or use the default automatic profile.", comment: ""), appName, bundleID)
+
+            let alert = UIAlertController(title: title, message: message, preferredStyle: .actionSheet)
+
+            alert.addAction(UIAlertAction(title: NSLocalizedString("Default (Automatic Team Profile)", comment: ""), style: .default) { _ in
+                continuation.resume(returning: .defaultProfile)
+            })
+
+            let formatter = DateFormatter()
+            formatter.dateStyle = .short
+            formatter.timeStyle = .none
+
+            for profile in allProfiles {
+                let isReady = ProfileManager.shared.isProfileReadyToSign(profile)
+                let certInfo = isReady ? "✓ Ready" : (profile.expirationDate < Date() ? "Expired" : "No Key")
+                let profileTitle = "\(profile.name) (\(certInfo), exp: \(formatter.string(from: profile.expirationDate)))"
+
+                alert.addAction(UIAlertAction(title: profileTitle, style: .default) { _ in
+                    continuation.resume(returning: .profile(profile))
+                })
+            }
+
+            alert.addAction(UIAlertAction(title: UIAlertAction.cancel.title, style: .cancel) { _ in
+                continuation.resume(throwing: OperationError.cancelled)
+            })
+
+            #if !os(tvOS)
+            if let popover = alert.popoverPresentationController {
+                popover.sourceView = presenter.view
+                popover.sourceRect = CGRect(x: presenter.view.bounds.midX, y: presenter.view.bounds.midY, width: 0, height: 0)
+                popover.permittedArrowDirections = []
+            }
+            #endif
+
+            presenter.present(alert, animated: true)
+        }
+    }
+}
+
+private final class ImagePickerDelegateHandler: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+    let onSelect: (UIImage?) -> Void
+    let onCancel: () -> Void
+
+    init(onSelect: @escaping (UIImage?) -> Void, onCancel: @escaping () -> Void) {
+        self.onSelect = onSelect
+        self.onCancel = onCancel
+    }
+
+    func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+        let image = (info[.editedImage] as? UIImage) ?? (info[.originalImage] as? UIImage)
+        picker.dismiss(animated: true) {
+            self.onSelect(image)
+        }
+    }
+
+    func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+        picker.dismiss(animated: true) {
+            self.onCancel()
         }
     }
 }

@@ -8,20 +8,45 @@
 
 import SwiftUI
 import UIKit
+import SideSign
 
 public enum InfoPlistCustomizationStyle {
     case sheet
     case dialog
 }
 
+public struct InfoPlistTarget: Identifiable, Sendable {
+    public let id: String
+    public let name: String
+    public let isExtension: Bool
+    public let initialPlist: [String: any Sendable]
+
+    public init(
+        id: String,
+        name: String? = nil,
+        isExtension: Bool = false,
+        initialPlist: [String: any Sendable]
+    ) {
+        let parser = InfoPlistParser(dictionary: initialPlist)
+        self.id = id
+        self.name = name ?? parser.displayName ?? parser.bundleName ?? id
+        self.isExtension = isExtension
+        self.initialPlist = initialPlist
+    }
+}
+
 public struct InfoPlistCustomizationCoreView: View {
     public let style: InfoPlistCustomizationStyle
-    public let initialPlist: [String: Any]
+    public let targets: [InfoPlistTarget]
     public let initialBundleID: String
     public let installedAppIdentities: [String: String]
     public let teamID: String
-    public let onProceed: ([String: Any], Bool) -> Void
+    public let onProceed: (([String: any Sendable], Bool) -> Void)?
+    public let onProceedTargets: (([String: [String: any Sendable]], Bool) -> Void)?
     public let onCancel: () -> Void
+
+    @State private var selectedTargetID: String
+    @State private var targetStates: [String: TargetState] = [:]
 
     @State private var bundleID: String
     @State private var previousValidBundleID: String
@@ -40,12 +65,12 @@ public struct InfoPlistCustomizationCoreView: View {
     @State private var newKeyName: String = ""
     @State private var newKeyValue: String = ""
     @State private var newKeyType: RawPlistType = .string
+    @State private var expandedKeyIDs: Set<UUID> = []
 
     public enum RawPlistType: String, CaseIterable, Identifiable {
         case string = "String"
         case boolean = "Boolean"
         case number = "Number"
-
         public var id: String { rawValue }
     }
 
@@ -56,35 +81,53 @@ public struct InfoPlistCustomizationCoreView: View {
         public var type: RawPlistType
     }
 
-    public init(
-        style: InfoPlistCustomizationStyle,
-        initialPlist: [String: Any],
-        initialBundleID: String,
-        appendTeamID: Bool = true,
-        installedAppIdentities: [String: String] = [:],
-        teamID: String = "",
-        onProceed: @escaping ([String: Any], Bool) -> Void,
-        onCancel: @escaping () -> Void
-    ) {
-        self.style = style
-        self.initialPlist = initialPlist
-        self.initialBundleID = initialBundleID
-        self.installedAppIdentities = installedAppIdentities
-        self.teamID = teamID
-        self.onProceed = onProceed
-        self.onCancel = onCancel
+    struct TargetState {
+        var bundleID: String
+        var previousValidBundleID: String
+        var appendTeamID: Bool
+        var displayName: String
+        var versionString: String
+        var buildNumber: String
+        var minimumOSVersion: String
+        var fileSharingEnabled: Bool
+        var openingDocumentsInPlace: Bool
+        var rawEntries: [RawPlistEntry]
 
-        let initialName = (initialPlist["CFBundleDisplayName"] as? String)
-            ?? (initialPlist["CFBundleName"] as? String)
-            ?? ""
-        let initialVersion = (initialPlist["CFBundleShortVersionString"] as? String) ?? ""
-        let initialBuild = (initialPlist["CFBundleVersion"] as? String) ?? ""
-        let initialMinOS = (initialPlist["MinimumOSVersion"] as? String) ?? ""
-        let initialFileSharing = (initialPlist["UIFileSharingEnabled"] as? Bool) ?? false
-        let initialDocInPlace = (initialPlist["LSSupportsOpeningDocumentsInPlace"] as? Bool) ?? false
+        init(
+            bundleID: String,
+            previousValidBundleID: String,
+            appendTeamID: Bool,
+            displayName: String,
+            versionString: String,
+            buildNumber: String,
+            minimumOSVersion: String,
+            fileSharingEnabled: Bool,
+            openingDocumentsInPlace: Bool,
+            rawEntries: [RawPlistEntry]
+        ) {
+            self.bundleID = bundleID
+            self.previousValidBundleID = previousValidBundleID
+            self.appendTeamID = appendTeamID
+            self.displayName = displayName
+            self.versionString = versionString
+            self.buildNumber = buildNumber
+            self.minimumOSVersion = minimumOSVersion
+            self.fileSharingEnabled = fileSharingEnabled
+            self.openingDocumentsInPlace = openingDocumentsInPlace
+            self.rawEntries = rawEntries
+        }
 
-        let startingBundleID: String = {
-            let trimmed = initialBundleID.trimmingCharacters(in: .whitespacesAndNewlines)
+        init(target: InfoPlistTarget, teamID: String, appendTeamID: Bool) {
+            let parser = InfoPlistParser(dictionary: target.initialPlist)
+            self.displayName = parser.displayName ?? parser.bundleName ?? ""
+            self.versionString = parser.shortVersionString ?? ""
+            self.buildNumber = parser.buildVersion ?? ""
+            self.minimumOSVersion = parser.minimumOSVersion ?? ""
+            self.fileSharingEnabled = parser.isFileSharingEnabled
+            self.openingDocumentsInPlace = parser.supportsOpeningDocumentsInPlace
+            self.appendTeamID = appendTeamID
+
+            let trimmed = target.id.trimmingCharacters(in: .whitespacesAndNewlines)
             let base: String
             if !teamID.isEmpty && trimmed.hasSuffix(".\(teamID)") {
                 base = String(trimmed.dropLast((".\(teamID)").count))
@@ -92,49 +135,122 @@ public struct InfoPlistCustomizationCoreView: View {
                 base = trimmed
             }
             let sanitizedBase = InfoPlistParser.sanitizeBundleID(base)
-            let finalID: String
-            if appendTeamID && !teamID.isEmpty {
-                finalID = "\(sanitizedBase).\(teamID)"
-            } else {
-                finalID = sanitizedBase
+            let finalID = (appendTeamID && !teamID.isEmpty && !target.isExtension) ? "\(sanitizedBase).\(teamID)" : (target.isExtension ? trimmed : sanitizedBase)
+
+            self.bundleID = finalID
+            self.previousValidBundleID = finalID
+
+            let standardKeys: Set<String> = [
+                "CFBundleIdentifier",
+                "CFBundleDisplayName",
+                "CFBundleName",
+                "CFBundleShortVersionString",
+                "CFBundleVersion",
+                "MinimumOSVersion",
+                "UIFileSharingEnabled",
+                "LSSupportsOpeningDocumentsInPlace"
+            ]
+
+            var entries: [RawPlistEntry] = []
+            for (key, val) in target.initialPlist where !standardKeys.contains(key) {
+                if let boolVal = val as? Bool {
+                    entries.append(RawPlistEntry(key: key, value: boolVal ? "YES" : "NO", type: .boolean))
+                } else if let numVal = val as? NSNumber {
+                    entries.append(RawPlistEntry(key: key, value: numVal.stringValue, type: .number))
+                } else if let strVal = val as? String {
+                    entries.append(RawPlistEntry(key: key, value: strVal, type: .string))
+                }
             }
-            debugLog("[InfoPlistCustomizationCoreView] init: initialBundleID='\(initialBundleID)', base='\(base)', sanitizedBase='\(sanitizedBase)', finalID='\(finalID)', teamID='\(teamID)', appendTeamID=\(appendTeamID)")
-            return finalID
-        }()
-
-        _bundleID = State(initialValue: startingBundleID)
-        _previousValidBundleID = State(initialValue: startingBundleID)
-        _appendTeamID = State(initialValue: appendTeamID)
-        _displayName = State(initialValue: initialName)
-        _versionString = State(initialValue: initialVersion)
-        _buildNumber = State(initialValue: initialBuild)
-        _minimumOSVersion = State(initialValue: initialMinOS)
-        _fileSharingEnabled = State(initialValue: initialFileSharing)
-        _openingDocumentsInPlace = State(initialValue: initialDocInPlace)
-
-        let standardKeys: Set<String> = [
-            "CFBundleIdentifier",
-            "CFBundleDisplayName",
-            "CFBundleName",
-            "CFBundleShortVersionString",
-            "CFBundleVersion",
-            "MinimumOSVersion",
-            "UIFileSharingEnabled",
-            "LSSupportsOpeningDocumentsInPlace"
-        ]
-
-        var entries: [RawPlistEntry] = []
-        for (key, val) in initialPlist where !standardKeys.contains(key) {
-            if let boolVal = val as? Bool {
-                entries.append(RawPlistEntry(key: key, value: boolVal ? "YES" : "NO", type: .boolean))
-            } else if let numVal = val as? NSNumber {
-                entries.append(RawPlistEntry(key: key, value: numVal.stringValue, type: .number))
-            } else if let strVal = val as? String {
-                entries.append(RawPlistEntry(key: key, value: strVal, type: .string))
-            }
+            entries.sort { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }
+            self.rawEntries = entries
         }
-        entries.sort { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }
-        _rawEntries = State(initialValue: entries)
+    }
+
+    var currentTarget: InfoPlistTarget {
+        targets.first(where: { $0.id == selectedTargetID }) ?? targets.first ?? InfoPlistTarget(id: initialBundleID, name: initialBundleID, isExtension: false, initialPlist: [:])
+    }
+
+    public init(
+        style: InfoPlistCustomizationStyle,
+        targets: [InfoPlistTarget],
+        initialBundleID: String,
+        appendTeamID: Bool = true,
+        installedAppIdentities: [String: String] = [:],
+        teamID: String = "",
+        onProceed: @escaping ([String: [String: any Sendable]], Bool) -> Void,
+        onCancel: @escaping () -> Void
+    ) {
+        self.style = style
+        let resolvedTargets = targets.isEmpty
+            ? [InfoPlistTarget(id: initialBundleID, name: initialBundleID, isExtension: false, initialPlist: [:])]
+            : targets
+        self.targets = resolvedTargets
+        self.initialBundleID = initialBundleID
+        self.installedAppIdentities = installedAppIdentities
+        self.teamID = teamID
+        self.onProceedTargets = onProceed
+        self.onProceed = nil
+        self.onCancel = onCancel
+
+        let initialID = resolvedTargets.first?.id ?? initialBundleID
+        var initialStates: [String: TargetState] = [:]
+        for target in resolvedTargets {
+            initialStates[target.id] = TargetState(target: target, teamID: teamID, appendTeamID: appendTeamID)
+        }
+
+        let firstState = initialStates[initialID] ?? TargetState(target: resolvedTargets[0], teamID: teamID, appendTeamID: appendTeamID)
+
+        _selectedTargetID = State(initialValue: initialID)
+        _targetStates = State(initialValue: initialStates)
+        _bundleID = State(initialValue: firstState.bundleID)
+        _previousValidBundleID = State(initialValue: firstState.previousValidBundleID)
+        _appendTeamID = State(initialValue: appendTeamID)
+        _displayName = State(initialValue: firstState.displayName)
+        _versionString = State(initialValue: firstState.versionString)
+        _buildNumber = State(initialValue: firstState.buildNumber)
+        _minimumOSVersion = State(initialValue: firstState.minimumOSVersion)
+        _fileSharingEnabled = State(initialValue: firstState.fileSharingEnabled)
+        _openingDocumentsInPlace = State(initialValue: firstState.openingDocumentsInPlace)
+        _rawEntries = State(initialValue: firstState.rawEntries)
+    }
+
+    public init(
+        style: InfoPlistCustomizationStyle,
+        initialPlist: [String: any Sendable],
+        initialBundleID: String,
+        appendTeamID: Bool = true,
+        installedAppIdentities: [String: String] = [:],
+        teamID: String = "",
+        onProceed: @escaping ([String: any Sendable], Bool) -> Void,
+        onCancel: @escaping () -> Void
+    ) {
+        let target = InfoPlistTarget(
+            id: initialBundleID,
+            initialPlist: initialPlist
+        )
+        self.style = style
+        self.targets = [target]
+        self.initialBundleID = initialBundleID
+        self.installedAppIdentities = installedAppIdentities
+        self.teamID = teamID
+        self.onProceed = onProceed
+        self.onProceedTargets = nil
+        self.onCancel = onCancel
+
+        let state = TargetState(target: target, teamID: teamID, appendTeamID: appendTeamID)
+
+        _selectedTargetID = State(initialValue: initialBundleID)
+        _targetStates = State(initialValue: [initialBundleID: state])
+        _bundleID = State(initialValue: state.bundleID)
+        _previousValidBundleID = State(initialValue: state.previousValidBundleID)
+        _appendTeamID = State(initialValue: appendTeamID)
+        _displayName = State(initialValue: state.displayName)
+        _versionString = State(initialValue: state.versionString)
+        _buildNumber = State(initialValue: state.buildNumber)
+        _minimumOSVersion = State(initialValue: state.minimumOSVersion)
+        _fileSharingEnabled = State(initialValue: state.fileSharingEnabled)
+        _openingDocumentsInPlace = State(initialValue: state.openingDocumentsInPlace)
+        _rawEntries = State(initialValue: state.rawEntries)
     }
 
     public var body: some View {
@@ -235,6 +351,8 @@ public struct InfoPlistCustomizationCoreView: View {
 
     private var scrollContent: some View {
         VStack(alignment: .leading, spacing: 18) {
+            targetPickerView
+
             identitySection
             versionSection
             capabilitiesSection
@@ -242,6 +360,103 @@ public struct InfoPlistCustomizationCoreView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 16)
+    }
+
+    @ViewBuilder
+    private var targetPickerView: some View {
+        if targets.count > 1 {
+            Menu {
+                ForEach(targets) { target in
+                    SwiftUI.Button {
+                        switchTarget(to: target.id)
+                    } label: {
+                        HStack {
+                            Text(target.name)
+                            if target.id == selectedTargetID {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(currentTarget.name)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.primary)
+
+                            Text(currentTarget.isExtension ? "Extension" : "Main App")
+                                .font(.system(size: 10, weight: .semibold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.secondary.opacity(0.15))
+                                .clipShape(Capsule())
+                                .foregroundColor(.secondary)
+                        }
+
+                        Text(selectedTargetID)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(Color(UIColor.secondarySystemGroupedBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+        }
+    }
+
+    private func switchTarget(to newID: String) {
+        guard newID != selectedTargetID else { return }
+        hideKeyboard()
+
+        // 1. Commit outgoing draft into its container
+        targetStates[selectedTargetID] = TargetState(
+            bundleID: bundleID,
+            previousValidBundleID: previousValidBundleID,
+            appendTeamID: appendTeamID,
+            displayName: displayName,
+            versionString: versionString,
+            buildNumber: buildNumber,
+            minimumOSVersion: minimumOSVersion,
+            fileSharingEnabled: fileSharingEnabled,
+            openingDocumentsInPlace: openingDocumentsInPlace,
+            rawEntries: rawEntries
+        )
+
+        // 2. Switch selected target ID
+        selectedTargetID = newID
+
+        // 3. Load incoming target draft container
+        let incoming: TargetState
+        if let existing = targetStates[newID] {
+            incoming = existing
+        } else if let target = targets.first(where: { $0.id == newID }) {
+            incoming = TargetState(target: target, teamID: teamID, appendTeamID: appendTeamID)
+            targetStates[newID] = incoming
+        } else {
+            return
+        }
+
+        bundleID = incoming.bundleID
+        previousValidBundleID = incoming.previousValidBundleID
+        appendTeamID = incoming.appendTeamID
+        displayName = incoming.displayName
+        versionString = incoming.versionString
+        buildNumber = incoming.buildNumber
+        minimumOSVersion = incoming.minimumOSVersion
+        fileSharingEnabled = incoming.fileSharingEnabled
+        openingDocumentsInPlace = incoming.openingDocumentsInPlace
+        rawEntries = incoming.rawEntries
     }
 
     private var headerView: some View {
@@ -297,54 +512,72 @@ public struct InfoPlistCustomizationCoreView: View {
             sectionHeader(title: "APP IDENTITY", icon: "app.badge.checkmark")
 
             VStack(spacing: 0) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Bundle Identifier")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    SuffixEnforcedTextField(
-                        text: $bundleID,
-                        placeholder: "com.example.app",
-                        suffix: !teamID.isEmpty ? ".\(teamID)" : "",
-                        isSuffixEnforced: appendTeamID,
-                        autocapitalization: .none,
-                        onCommit: { hideKeyboard() }
-                    )
-                    .frame(height: 22)
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
+                if currentTarget.isExtension {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Bundle Identifier")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text(bundleID)
+                            .font(.system(size: 14, design: .monospaced))
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 8)
+                        Text("Extension bundle identifier is managed relative to the main application.")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                } else {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Bundle Identifier")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        SuffixEnforcedTextField(
+                            text: $bundleID,
+                            placeholder: "com.example.app",
+                            suffix: !teamID.isEmpty ? ".\(teamID)" : "",
+                            isSuffixEnforced: appendTeamID,
+                            autocapitalization: .none,
+                            onCommit: { hideKeyboard() }
+                        )
+                        .frame(height: 22)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
 
-                Divider().padding(.leading, 16)
+                    Divider().padding(.leading, 16)
 
-                SwiftUI.Button(action: {
-                    appendTeamID.toggle()
-                    guard !teamID.isEmpty else { return }
-                    let suffix = ".\(teamID)"
-                    if appendTeamID {
-                        let clean = InfoPlistParser.sanitizeBundleID(bundleID)
-                        bundleID = clean.hasSuffix(suffix) ? clean : "\(clean)\(suffix)"
-                    } else {
-                        if bundleID.hasSuffix(suffix) {
-                            bundleID = String(bundleID.dropLast(suffix.count))
+                    SwiftUI.Button(action: {
+                        appendTeamID.toggle()
+                        guard !teamID.isEmpty else { return }
+                        let suffix = ".\(teamID)"
+                        if appendTeamID {
+                            let clean = InfoPlistParser.sanitizeBundleID(bundleID)
+                            bundleID = clean.hasSuffix(suffix) ? clean : "\(clean)\(suffix)"
+                        } else {
+                            if bundleID.hasSuffix(suffix) {
+                                bundleID = String(bundleID.dropLast(suffix.count))
+                            }
                         }
+                        previousValidBundleID = bundleID
+                        debugLog("[InfoPlistCustomizationCoreView] appendTeamID toggled to \(appendTeamID) -> bundleID='\(bundleID)'")
+                    }) {
+                        HStack {
+                            Text("Append Team ID to Bundle Identifier")
+                                .font(.system(size: 14, weight: .regular))
+                                .foregroundColor(.primary)
+                            Spacer()
+                            Image(systemName: appendTeamID ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 20))
+                                .foregroundColor(appendTeamID ? .blue : .secondary)
+                        }
+                        .contentShape(Rectangle())
                     }
-                    previousValidBundleID = bundleID
-                    debugLog("[InfoPlistCustomizationCoreView] appendTeamID toggled to \(appendTeamID) -> bundleID='\(bundleID)'")
-                }) {
-                    HStack {
-                        Text("Append Team ID to Bundle Identifier")
-                            .font(.system(size: 14, weight: .regular))
-                            .foregroundColor(.primary)
-                        Spacer()
-                        Image(systemName: appendTeamID ? "checkmark.circle.fill" : "circle")
-                            .font(.system(size: 20))
-                            .foregroundColor(appendTeamID ? .blue : .secondary)
-                    }
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
                 }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
 
                 Divider().padding(.leading, 16)
 
@@ -569,12 +802,23 @@ public struct InfoPlistCustomizationCoreView: View {
     }
 
     private func rawKeyRow(for item: RawPlistEntry) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let isExpanded = expandedKeyIDs.contains(item.id)
+        return VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(item.key)
                     .font(.system(size: 13, weight: .medium, design: .monospaced))
                     .foregroundColor(.primary)
-                    .lineLimit(1)
+                    .lineLimit(isExpanded ? nil : 1)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            if expandedKeyIDs.contains(item.id) {
+                                expandedKeyIDs.remove(item.id)
+                            } else {
+                                expandedKeyIDs.insert(item.id)
+                            }
+                        }
+                    }
                 Spacer()
                 Text(item.type.rawValue)
                     .font(.system(size: 10, weight: .semibold))
@@ -717,49 +961,51 @@ public struct InfoPlistCustomizationCoreView: View {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 
-    private func handleProceed() {
-        var updated = initialPlist
+    private func serialize(state: TargetState, for target: InfoPlistTarget) -> [String: any Sendable] {
+        var updated = target.initialPlist
 
-        let trimmed = bundleID.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cleanBaseID: String = {
-            let suffix = ".\(teamID)"
-            let base: String
-            if appendTeamID && !teamID.isEmpty && trimmed.hasSuffix(suffix) {
-                base = String(trimmed.dropLast(suffix.count))
-            } else {
-                base = trimmed
+        if !target.isExtension {
+            let cleanBaseID: String = {
+                let trimmed = state.bundleID.trimmingCharacters(in: .whitespacesAndNewlines)
+                let suffix = ".\(teamID)"
+                let base: String
+                if state.appendTeamID && !teamID.isEmpty && trimmed.hasSuffix(suffix) {
+                    base = String(trimmed.dropLast(suffix.count))
+                } else {
+                    base = trimmed
+                }
+                return InfoPlistParser.sanitizeBundleID(base)
+            }()
+            if !cleanBaseID.isEmpty {
+                updated["CFBundleIdentifier"] = cleanBaseID
             }
-            return InfoPlistParser.sanitizeBundleID(base)
-        }()
-        if !cleanBaseID.isEmpty {
-            updated["CFBundleIdentifier"] = cleanBaseID
         }
 
-        let cleanDisplayName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanDisplayName = state.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         if !cleanDisplayName.isEmpty {
             updated["CFBundleDisplayName"] = cleanDisplayName
             updated["CFBundleName"] = cleanDisplayName
         }
 
-        let cleanVersion = versionString.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanVersion = state.versionString.trimmingCharacters(in: .whitespacesAndNewlines)
         if !cleanVersion.isEmpty {
             updated["CFBundleShortVersionString"] = cleanVersion
         }
 
-        let cleanBuild = buildNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanBuild = state.buildNumber.trimmingCharacters(in: .whitespacesAndNewlines)
         if !cleanBuild.isEmpty {
             updated["CFBundleVersion"] = cleanBuild
         }
 
-        let cleanMinOS = minimumOSVersion.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanMinOS = state.minimumOSVersion.trimmingCharacters(in: .whitespacesAndNewlines)
         if !cleanMinOS.isEmpty {
             updated["MinimumOSVersion"] = cleanMinOS
         }
 
-        updated["UIFileSharingEnabled"] = fileSharingEnabled
-        updated["LSSupportsOpeningDocumentsInPlace"] = openingDocumentsInPlace
+        updated["UIFileSharingEnabled"] = state.fileSharingEnabled
+        updated["LSSupportsOpeningDocumentsInPlace"] = state.openingDocumentsInPlace
 
-        for entry in rawEntries {
+        for entry in state.rawEntries {
             let key = entry.key.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !key.isEmpty else { continue }
             switch entry.type {
@@ -778,6 +1024,36 @@ public struct InfoPlistCustomizationCoreView: View {
             }
         }
 
-        onProceed(updated, appendTeamID)
+        return updated
+    }
+
+    private func handleProceed() {
+        hideKeyboard()
+
+        targetStates[selectedTargetID] = TargetState(
+            bundleID: bundleID,
+            previousValidBundleID: previousValidBundleID,
+            appendTeamID: appendTeamID,
+            displayName: displayName,
+            versionString: versionString,
+            buildNumber: buildNumber,
+            minimumOSVersion: minimumOSVersion,
+            fileSharingEnabled: fileSharingEnabled,
+            openingDocumentsInPlace: openingDocumentsInPlace,
+            rawEntries: rawEntries
+        )
+
+        var allResults: [String: [String: any Sendable]] = [:]
+        for target in targets {
+            let state = targetStates[target.id] ?? TargetState(target: target, teamID: teamID, appendTeamID: appendTeamID)
+            allResults[target.id] = serialize(state: state, for: target)
+        }
+
+        let mainID = targets.first(where: { !$0.isExtension })?.id ?? targets.first?.id ?? initialBundleID
+        let mainPlist = allResults[mainID] ?? [:]
+        let mainAppendTeamID = targetStates[mainID]?.appendTeamID ?? appendTeamID
+
+        onProceedTargets?(allResults, mainAppendTeamID)
+        onProceed?(mainPlist, mainAppendTeamID)
     }
 }

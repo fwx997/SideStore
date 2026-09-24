@@ -141,7 +141,9 @@ public final class AuthManager: @unchecked Sendable {
     func signIn(
         presentingViewController: UIViewController? = nil,
         skipDeviceRegistration: Bool = false,
-        skipCertificateProvisioning: Bool = false
+        skipCertificateProvisioning: Bool = false,
+        skipResign: Bool = false,
+        skipHowTos: Bool = false
     ) async throws -> SignInResult {
         let dbBackgroundContext = DatabaseManager.shared.persistentContainer.newBackgroundContext()
         let signInFlowHandler = SignInFlowHandler(presentingViewController: presentingViewController)
@@ -155,7 +157,9 @@ public final class AuthManager: @unchecked Sendable {
             signInHandler: signInFlowHandler,
             anisetteServerHandler: signInFlowHandler,
             skipDeviceRegistration: skipDeviceRegistration,
-            skipCertificateProvisioning: skipCertificateProvisioning
+            skipCertificateProvisioning: skipCertificateProvisioning,
+            skipResign: skipResign,
+            skipHowTos: skipHowTos
         )
         let result = try await signInOperation.execute()
         self.team = result.team

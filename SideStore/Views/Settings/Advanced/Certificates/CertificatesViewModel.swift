@@ -451,8 +451,9 @@ class CertificatesViewModel: ObservableObject {
         return CertificateManager.shared.isCertificateLocallyCached(serialNumber: certificate.serialNumber)
     }
 
-    func getSigningCertificate(at url: URL) -> ALTX509Certificate? {
-        CertificateManager.shared.getSigningCertificate(at: url)
+
+    func getSigningCertificate(for installedApp: InstalledAppProtocol) -> ALTX509Certificate? {
+        CertificateManager.shared.getSigningCertificate(for: installedApp)
     }
     
     func getLocalX509Certificate(serialNumber: String) -> ALTX509Certificate? {

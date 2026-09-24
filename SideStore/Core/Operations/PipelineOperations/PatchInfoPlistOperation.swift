@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import SideSign
 
 final class PatchInfoPlistOperation: BasePipelineOperation<InstallAppOperationContext, Void>, @unchecked Sendable {
     override func execute(parentProgress: Progress?) async throws {
@@ -18,33 +19,64 @@ final class PatchInfoPlistOperation: BasePipelineOperation<InstallAppOperationCo
         }
         try await super.executePreconditionCheck(parentProgress: parentProgress)
         
-        let bundleID = self.context.targetBundleIdentifier
-        let customPlistURL = InstalledApp.appsDirectoryURL.appendingPathComponent(bundleID).appendingPathComponent("custom_info.plist")
-        
-        guard FileManager.default.fileExists(atPath: customPlistURL.path) else {
-            debugLog("[PatchInfoPlistOperation] No custom_info.plist found for \(bundleID). Skipping.")
+        guard let targetAppBundle = self.context.targetAppBundle else {
+            debugLog("[PatchInfoPlistOperation] No targetAppBundle found. Skipping.")
             return
         }
-        
-        do {
-            let customParser = try InfoPlistParser(plistURL: customPlistURL)
-            self.context.customInfoPlist = customParser.rawDictionary
+
+        for bundle in targetAppBundle.allAppBundles {
+            let installedEntity = self.installedEntity(for: bundle)
             
-            if let customID = customParser.bundleIdentifier,
-               !customID.isEmpty,
-               customID != self.context.bundleIdentifier {
-                self.context.customBundleIdentifier = customID
+            // 1. If not already in context, load from installedApp's cache
+            if self.context.customInfoPlistByBundleID[bundle.bundleIdentifier] == nil {
+                if let plistURL = installedEntity?.customInfoPlistURL,
+                   let customParser = try? InfoPlistParser(plistURL: plistURL) {
+                    self.context.customInfoPlistByBundleID[bundle.bundleIdentifier] = customParser.rawDictionary
+                }
             }
             
-            if let targetAppBundle = self.context.targetAppBundle {
-                var targetParser = try InfoPlistParser(plistURL: targetAppBundle.bundle.infoPlistURL)
-                targetParser.merge(customParser.rawDictionary)
-                try targetParser.write(to: targetAppBundle.bundle.infoPlistURL)
-                debugLog("[PatchInfoPlistOperation] Successfully patched staged app Info.plist for \(bundleID)")
+            if self.context.customEntitlementsByBundleID[bundle.bundleIdentifier] == nil {
+                if let customEntitlements = installedEntity?.customEntitlements {
+                    self.context.customEntitlementsByBundleID[bundle.bundleIdentifier] = customEntitlements
+                }
             }
-        } catch {
-            debugLog("[PatchInfoPlistOperation] Error applying custom Info.plist: \(error)")
-            throw error
+
+            // 2. Apply custom Info.plist if available
+            if let customPlist = self.context.customInfoPlistByBundleID[bundle.bundleIdentifier] {
+                do {
+                    if !bundle.isExtension {
+                        let customParser = InfoPlistParser(dictionary: customPlist)
+                        if let customID = customParser.bundleIdentifier,
+                           !customID.isEmpty,
+                           customID != self.context.bundleIdentifier {
+                            self.context.customBundleIdentifier = customID
+                        }
+                    }
+                    
+                    try bundle.updateInfoPlist(with: customPlist)
+                    debugLog("[PatchInfoPlistOperation] Successfully patched Info.plist for \(bundle.bundleIdentifier)")
+                } catch {
+                    debugLog("[PatchInfoPlistOperation] Error applying custom Info.plist for \(bundle.bundleIdentifier): \(error)")
+                    throw error
+                }
+            }
+
+            // 3. Register custom entitlements if available
+            if let customEntitlements = self.context.customEntitlementsByBundleID[bundle.bundleIdentifier] {
+                if !bundle.isExtension {
+                    for (key, value) in customEntitlements {
+                        self.context.additionalEntitlements[ALTEntitlement(key)] = value
+                    }
+                }
+                debugLog("[PatchInfoPlistOperation] Successfully loaded custom entitlements for \(bundle.bundleIdentifier)")
+            }
         }
+    }
+    
+    private func installedEntity(for bundle: ALTApplication) -> (any InstalledAppProtocol)? {
+        if bundle.isExtension {
+            return self.context.installedApp?.appExtensions.first(where: { $0.bundleIdentifier == bundle.bundleIdentifier })
+        }
+        return self.context.installedApp
     }
 }

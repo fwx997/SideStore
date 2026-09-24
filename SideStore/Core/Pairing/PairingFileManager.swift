@@ -6,277 +6,237 @@
 //  Copyright © 2026 SideStore. All rights reserved.
 //
 
-@preconcurrency import UIKit
+import Foundation
 import UniformTypeIdentifiers
 import MinimuxerCommon
 
+public struct PairingFileMetadata: Sendable {
+    public let exists: Bool
+    public let size: Int64
+    public let creationDate: Date?
+    public let modificationDate: Date?
+}
+
 final class PairingFileManager: NSObject {
     static let shared = PairingFileManager()
-    static let pairingFileName = AppConstants.Pairing.fileName
 
-    private var completion: ((URL?) -> Void)?
-
-    nonisolated var pairingUDID: String? {
-        guard let contents = fetchPairingFile() else {
-            debugLog("[PairingFile] pairingUDID: fetchPairingFile() returned nil")
-            return nil
-        }
-        do {
-            let pairing = try PairingFileParser.parse(content: contents)
-            guard let lockdown = pairing as? LockdownPairingFile else {
-                debugLog("[PairingFile] pairingUDID: Remote Pairing files do not contain a hardware UDID")
-                return nil
-            }
-            return lockdown.udid
-        } catch {
-            debugLog("[PairingFile] pairingUDID: failed to parse pairing file: \(error)")
-            return nil
-        }
+    static var supportedContentTypes: [UTType] {
+        var types = AppConstants.Pairing.supportedExtensions.compactMap { UTType(filenameExtension: $0) }
+        types.append(contentsOf: [.propertyList, .xml])
+        return types
     }
 
+    // zh-patch: 解析配对文件内容所属协议 (RP / lockdown)
     private nonisolated static func pairingMode(of contents: String) -> PairingProtocol? {
-        guard let parsed = try? PairingFileParser.parse(content: contents) else { return nil }
+        guard let parsed = try? PairingFileParser.parse(content: contents, preferred: nil) else { return nil }
         return parsed.mode
     }
 
-    nonisolated func fetchPairingFile() -> String? {
+    // zh-patch (P6): LC+Sideloadly 场景 — Sideloadly 每次安装会把预信任的 RP 格式配对文件
+    // 嵌入包内 (bundle 资源或 Info.plist), 内容随安装刷新。上游新版只读 Documents,
+    // 这里保留嵌入文件这一来源: 实时读取不落盘, 避免 Sideloadly 重装后用到旧信任文件。
+    nonisolated static func embeddedRPPairingFile() -> String? {
         let fm = FileManager.default
-        let documentsPath = fm.documentsDirectory.appendingPathComponent("/\(Self.pairingFileName)")
-        // zh-patch: Documents 里被跳过的 lockdown 文件, 无 RP 来源时兜底用 (见下)
-        var lockdownFallback: String? = nil
-        if fm.fileExists(atPath: documentsPath.path),
-           let contents = try? String(contentsOf: documentsPath), !contents.isEmpty
-        {
-            // zh-patch: iOS 17+ 上 lockdownd 拒绝传统 lockdown TLS 直连 (连接即被断开,
-            // AFC/instproxy 全部瞬间 Broken pipe), lockdown 格式文件只会让应用进入
-            // 不可用的 .lockdown 传输模式。检测到时跳过 Documents 里的 lockdown 文件,
-            // 回退到 RP 格式来源 (LC+SideStore 场景即 Sideloadly 预信任的嵌入文件)。
-            if #available(iOS 17, *), Self.pairingMode(of: contents) == .lockdown {
-                debugLog("[PairingFile] zh-patch: Documents pairing file is lockdown-format; skipping on iOS 17+ (RP transport required)")
-                lockdownFallback = contents
-            } else {
-                return contents
-            }
-        }
-        if let url = Bundle.main.url(forResource: AppConstants.Pairing.bundleResourceName, withExtension: AppConstants.Pairing.fileExtension),
+        if let url = Bundle.main.url(forResource: AppConstants.Pairing.bundleResourceName, withExtension: AppConstants.Pairing.bundleResourceFileExtension),
            fm.fileExists(atPath: url.path),
            let data = fm.contents(atPath: url.path),
-           let contents = String(data: data, encoding: .utf8),
-           !contents.isEmpty
+           let contents = String(data: data, encoding: .utf8), !contents.isEmpty,
+           pairingMode(of: contents) == .rppairing
         {
-            // zh-patch: 嵌入的 RP 格式配对文件 (Sideloadly 每次安装重新生成并预信任) 始终可用,
-            // 不受 isPairingReset 门控限制 — 该门控针对的是手动导入的 lockdown 文件流程。
-            if Self.pairingMode(of: contents) == .rppairing {
-                debugLog("[PairingFile] zh-patch: using embedded RP-format pairing file (bypassing isPairingReset gate)")
-                return contents
-            }
-            if !UserDefaults.standard.isPairingReset {
-                return contents
-            }
+            return contents
         }
         if let plistString = Bundle.main.object(forInfoDictionaryKey: AppConstants.Pairing.bundleResourceName) as? String,
-           !plistString.isEmpty,
-           !plistString.contains(AppConstants.Pairing.placeholderString),
-           !UserDefaults.standard.isPairingReset
+           !plistString.isEmpty, !plistString.contains(AppConstants.Pairing.placeholderString),
+           pairingMode(of: plistString) == .rppairing
         {
             return plistString
-        }
-        if let lockdownFallback = lockdownFallback {
-            // zh-patch: 没有任何 RP 来源时兜底返回 lockdown 文件, 保持旧行为避免配对弹窗死循环;
-            // 此状态下 iOS 17+ 的 AFC 仍会失败, 需从日志排查 (应改用 RP 格式配对文件)。
-            debugLog("[PairingFile] zh-patch: no RP-format pairing source found; falling back to lockdown file (transport may be unavailable on iOS 17+)")
-            return lockdownFallback
         }
         return nil
     }
 
-    func savePairingFile(contents: String) throws {
-        let fm = FileManager.default
-        let documentsPath = fm.documentsDirectory.appendingPathComponent(Self.pairingFileName)
-        if fm.fileExists(atPath: documentsPath.path) {
-            try? fm.removeItem(at: documentsPath)
-        }
-        try contents.write(to: documentsPath, atomically: true, encoding: .utf8)
-        debugLog("[PairingFile] Successfully copied and saved pairing file to: \(documentsPath.path)")
-        UserDefaults.standard.isPairingReset = false
+    var activeProtocol: PairingProtocol {
+        minimuxerPairingProtocol()
     }
-}
 
-#if !os(tvOS)
-extension PairingFileManager: UIDocumentPickerDelegate {
-    @MainActor
-    func presentPairingFileAlert(on vc: UIViewController, isRetry: Bool, completion: ((URL?) -> Void)? = nil) {
-        self.completion = { url in
-            completion?(url)
-            self.completion = nil
+    var persistedActiveProtocol: PairingProtocol? {
+        get { UserDefaults.standard.activePairingProtocol }
+        set { UserDefaults.standard.activePairingProtocol = newValue }
+    }
+
+    var preferredProtocol: PairingProtocol? {
+        get { UserDefaults.standard.preferredPairingProtocol }
+        set { UserDefaults.standard.preferredPairingProtocol = newValue }
+    }
+
+    nonisolated func pairingFileURL(for mode: PairingProtocol) -> URL {
+        let fileName = mode == .rppairing ? AppConstants.Pairing.remotePairingFileName : AppConstants.Pairing.lockdownPairingFileName
+        return FileManager.default.documentsDirectory.appendingPathComponent(fileName)
+    }
+
+    nonisolated func hasPairingFile(for mode: PairingProtocol) -> Bool {
+        return FileManager.default.fileExists(atPath: pairingFileURL(for: mode).path)
+    }
+
+    nonisolated func hasPairingFile() -> Bool {
+        guard !UserDefaults.standard.isPairingReset else {
+            // zh-patch: 嵌入 RP 文件无视 isPairingReset 门控 (Sideloadly 每次安装重新生成并预信任)
+            return Self.embeddedRPPairingFile() != nil
         }
-        let title = isRetry ? NSLocalizedString("Invalid Pairing File", comment: "") : NSLocalizedString("Pairing File", comment: "")
-        let message = isRetry
-            ? NSLocalizedString("The selected pairing file is invalid or not usable. Please select a valid pairing file.", comment: "")
-            : NSLocalizedString("Select the pairing file or select \"Help\" for help.", comment: "")
-        
-        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: NSLocalizedString("Help", comment: ""), style: .default) { _ in
-            UIApplication.shared.open(AppConstants.URLs.pairingDocumentation)
-            if completion == nil {
-                sleep(2); exit(0)
-            } else {
-                completion?(nil)
+        if let target = preferredProtocol, hasPairingFile(for: target) {
+            return true
+        }
+        if let mode = persistedActiveProtocol, hasPairingFile(for: mode) {
+            return true
+        }
+        // zh-patch: LC+Sideloadly 场景 Documents 可能没有配对文件, 但包内嵌有可用 RP 文件
+        return Self.embeddedRPPairingFile() != nil
+    }
+
+    nonisolated func metadata(for mode: PairingProtocol) -> PairingFileMetadata {
+        let fileURL = pairingFileURL(for: mode)
+        let path = fileURL.path
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: path) else {
+            return PairingFileMetadata(exists: false, size: 0, creationDate: nil, modificationDate: nil)
+        }
+        let attrs = (try? fm.attributesOfItem(atPath: path)) ?? [:]
+        let size = (attrs[.size] as? NSNumber)?.int64Value ?? 0
+        let creation = (attrs[.creationDate] as? Date) ?? (attrs[.modificationDate] as? Date)
+        let mod = attrs[.modificationDate] as? Date
+        return PairingFileMetadata(exists: true, size: size, creationDate: creation, modificationDate: mod)
+    }
+
+    nonisolated func fetchPairingFile(for mode: PairingProtocol) -> String? {
+        let fileURL = pairingFileURL(for: mode)
+        let fm = FileManager.default
+        if fm.fileExists(atPath: fileURL.path),
+           let contents = try? String(contentsOf: fileURL), !contents.isEmpty
+        {
+            return contents
+        }
+        // zh-patch: Documents 无 RP 文件时兜底用包内嵌入的 RP 文件 (Sideloadly 预信任)
+        if mode == .rppairing, let contents = Self.embeddedRPPairingFile() {
+            debugLog("[PairingFile] zh-patch: Documents RP pairing file missing; using embedded RP-format pairing file")
+            return contents
+        }
+        return nil
+    }
+
+    nonisolated func fetchPairingFile(preferred: PairingProtocol? = nil) -> String? {
+        guard !UserDefaults.standard.isPairingReset else {
+            // zh-patch: 嵌入 RP 文件无视 isPairingReset 门控 (该门控针对手动导入的 lockdown 文件流程)
+            if let contents = Self.embeddedRPPairingFile() {
+                debugLog("[PairingFile] zh-patch: using embedded RP-format pairing file (bypassing isPairingReset gate)")
+                return contents
             }
-        })
-        alert.addAction(UIAlertAction(title: NSLocalizedString("Select File", comment: ""), style: .default) { _ in
-            var types = UTType.types(tag: "plist", tagClass: .filenameExtension, conformingTo: nil)
-            types.append(contentsOf: UTType.types(tag: AppConstants.Pairing.fileExtension, tagClass: .filenameExtension, conformingTo: .data))
-            types.append(.xml)
-            let picker = UIDocumentPickerViewController(forOpeningContentTypes: types)
-            picker.delegate = self
-            picker.shouldShowFileExtensions = true
-            vc.present(picker, animated: true)
-            UserDefaults.standard.isPairingReset = false
-        })
-        
-        let cancelTitle = isRetry ? NSLocalizedString("Skip", comment: "") : NSLocalizedString("Cancel", comment: "")
-        alert.addAction(UIAlertAction(title: cancelTitle, style: .cancel) { _ in
-            if completion == nil {
-                self.showPairingWarningAndProceed(on: vc)
-            } else {
-                completion?(nil)
+            return nil
+        }
+        let targetPreferred = preferred ?? preferredProtocol
+        if let targetPreferred, let contents = fetchPairingFile(for: targetPreferred) {
+            // zh-patch: iOS 17+ lockdown 直连传输被设备拒收 (连接即断, AFC/instproxy 全断),
+            // 嵌入 RP 可用时优先用 RP, 避免进入不可用的 .lockdown 模式
+            if #available(iOS 17, *), Self.pairingMode(of: contents) == .lockdown,
+               let rp = Self.embeddedRPPairingFile() {
+                debugLog("[PairingFile] zh-patch: lockdown pairing selected on iOS 17+; preferring embedded RP-format pairing file")
+                return rp
             }
-        })
-        vc.present(alert, animated: true)
+            return contents
+        }
+        if let persisted = persistedActiveProtocol, let contents = fetchPairingFile(for: persisted) {
+            if #available(iOS 17, *), Self.pairingMode(of: contents) == .lockdown,
+               let rp = Self.embeddedRPPairingFile() {
+                debugLog("[PairingFile] zh-patch: lockdown pairing selected on iOS 17+; preferring embedded RP-format pairing file")
+                return rp
+            }
+            return contents
+        }
+        // zh-patch: 无任何 Documents 来源时兜底返回嵌入 RP 文件, 保持 LC+Sideloadly 开箱即用
+        if let contents = Self.embeddedRPPairingFile() {
+            debugLog("[PairingFile] zh-patch: no Documents pairing source; using embedded RP-format pairing file")
+            return contents
+        }
+        return nil
+    }
+
+    nonisolated func fetchPairingFile(preferred: PairingProtocol? = nil) -> String? {
+        guard !UserDefaults.standard.isPairingReset else { return nil }
+        let targetPreferred = preferred ?? preferredProtocol
+        if let targetPreferred, let contents = fetchPairingFile(for: targetPreferred) {
+            return contents
+        }
+        if let persisted = persistedActiveProtocol {
+            return fetchPairingFile(for: persisted)
+        }
+        return nil
     }
     
-    func showPairingWarningAndProceed(on vc: UIViewController) {
-        let warningAlert = UIAlertController(
-            title: "⚠️ " + NSLocalizedString("Pairing Required", comment: ""),
-            message: NSLocalizedString("Without a valid pairing file, operations that require a pairing file (such as installing, refreshing, or resigning apps) will not function.", comment: ""),
-            preferredStyle: .alert
-        )
-        warningAlert.addAction(UIAlertAction(title: NSLocalizedString("OK", comment: ""), style: .default))
-        vc.present(warningAlert, animated: true)
+    @discardableResult
+    nonisolated func parse(content: String, preferred: PairingProtocol? = nil) throws -> any PairingFile {
+        try PairingFileParser.parse(content: content, preferred: preferred)
     }
 
-    func importPairingFile(presentingVC: UIViewController, title: String, message: String) async throws -> URL {
-        try await withCheckedThrowingContinuation { continuation in
-            Task { @MainActor in
-                self.presentPairingFileAlert(on: presentingVC, isRetry: false) { url in
-                    if let url = url {
-                        continuation.resume(returning: url)
-                    } else {
-                        continuation.resume(throwing: OperationError.invalidPairingFile(reason: "URL is nil"))
-                    }
-                }
-            }
+    @discardableResult
+    func savePairingFile(contents: String, preferred: PairingProtocol? = nil) throws -> any PairingFile {
+        let parsed = try parse(content: contents, preferred: preferred)
+        let destinationURL = pairingFileURL(for: parsed.mode)
+        let fm = FileManager.default
+        if fm.fileExists(atPath: destinationURL.path) {
+            try? fm.removeItem(at: destinationURL)
         }
+        try contents.write(to: destinationURL, atomically: true, encoding: .utf8)
+        debugLog("[PairingFile] Saved \(parsed.mode.rawValue) pairing file to: \(destinationURL.path)")
+        UserDefaults.standard.isPairingReset = false
+        return parsed
     }
 
-    @MainActor
-    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-        let url = urls[0]
-        let isSecuredURL = url.startAccessingSecurityScopedResource() == true
+    func inspectPairingFile(from url: URL) throws -> (content: String, file: any PairingFile) {
+        let isSecured = url.startAccessingSecurityScopedResource()
         defer {
-            if (isSecuredURL) {
+            if isSecured {
                 url.stopAccessingSecurityScopedResource()
             }
         }
-
-        do {
-            debugLog("[PairingFile] User picked pairing file from: \(url.path)")
-            let data = try Data(contentsOf: url)
-            guard let pairingString = String(data: data, encoding: .utf8) else {
-                debugLog("[PairingFile] Unable to read pairing file")
-                self.completion?(nil)
-                return
-            }
-            
-            // Delegate file operations to the main class
-            try savePairingFile(contents: pairingString)
-            self.completion?(url)
-        } catch {
-            debugLog("[PairingFile] Error importing pairing file: \(error)")
-            self.completion?(nil)
+        let data = try Data(contentsOf: url)
+        guard let content = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) else {
+            throw CocoaError(.fileReadInapplicableStringEncoding)
         }
-        
-        controller.dismiss(animated: true, completion: nil)
+        let parsed = try parse(content: content, preferred: nil)
+        return (content, parsed)
     }
 
-    @MainActor
-    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-        self.completion?(nil)
+    func importPairingFile(from url: URL, preferred: PairingProtocol? = nil) throws {
+        let (content, _) = try inspectPairingFile(from: url)
+        let parsed = try savePairingFile(contents: content, preferred: preferred)
+        persistedActiveProtocol = parsed.mode
+    }
+
+    func deletePairingFile(for mode: PairingProtocol) {
+        let fileURL = pairingFileURL(for: mode)
+        let fm = FileManager.default
+        if fm.fileExists(atPath: fileURL.path) {
+            try? fm.removeItem(at: fileURL)
+            debugLog("[PairingFile] Deleted \(mode.rawValue) pairing file: \(fileURL.path)")
+        }
+        if mode == persistedActiveProtocol {
+            persistedActiveProtocol = nil
+        }
+    }
+
+    func resetAllPairingFiles() {
+        let fm = FileManager.default
+        let files = [
+            AppConstants.Pairing.lockdownPairingFileName,
+            AppConstants.Pairing.remotePairingFileName,
+            AppConstants.Pairing.legacyPairingFileName
+        ]
+        for name in files {
+            let path = fm.documentsDirectory.appendingPathComponent(name)
+            if fm.fileExists(atPath: path.path) {
+                try? fm.removeItem(at: path)
+            }
+        }
+        UserDefaults.standard.isPairingReset = true
+        persistedActiveProtocol = nil
+        debugLog("[PairingFile] Reset all pairing files.")
     }
 }
-#else
-extension PairingFileManager {
-    @MainActor
-    func presentPairingFileAlert(on vc: UIViewController, isRetry: Bool, completion: ((URL?) -> Void)? = nil) {
-        self.completion = { url in
-            completion?(url)
-            self.completion = nil
-        }
-
-        let title = isRetry ? NSLocalizedString("Invalid Pairing File", comment: "") : NSLocalizedString("Pairing File Required", comment: "")
-        TVWebFileTransferManager.shared.startImport(
-            acceptedExtensions: ["mobiledevicepairing", "plist", "xml"],
-            title: title,
-            presentingVC: vc
-        ) { [weak self] tempURL in
-            guard let self = self else { return }
-            guard let tempURL = tempURL,
-                  let data = try? Data(contentsOf: tempURL),
-                  let pairingString = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) else {
-                if let completion = self.completion {
-                    completion(nil)
-                } else {
-                    self.showPairingWarningAndProceed(on: vc)
-                }
-                return
-            }
-
-            do {
-                try self.savePairingFile(contents: pairingString)
-                let documentsPath = FileManager.default.documentsDirectory.appendingPathComponent(Self.pairingFileName)
-                if let completion = self.completion {
-                    completion(documentsPath)
-                } else {
-                    Task.detached {
-                        do {
-                            try await AppBootManager.shared.startMinimuxer(pairingFile: pairingString)
-                        } catch {
-                            debugLog("[PairingFile] startMinimuxer failed: \(error)")
-                        }
-                    }
-                }
-            } catch {
-                debugLog("[PairingFile] Failed to save uploaded pairing file: \(error)")
-                if let completion = self.completion {
-                    completion(nil)
-                }
-            }
-        }
-    }
-
-    func showPairingWarningAndProceed(on vc: UIViewController) {
-        let warningAlert = UIAlertController(
-            title: "⚠️ " + NSLocalizedString("Pairing Required", comment: ""),
-            message: NSLocalizedString("Without a valid pairing file, operations that require a pairing file (such as installing, refreshing, or resigning apps) will not function.", comment: ""),
-            preferredStyle: .alert
-        )
-        warningAlert.addAction(UIAlertAction(title: NSLocalizedString("OK", comment: ""), style: .default))
-        vc.present(warningAlert, animated: true)
-    }
-
-    func importPairingFile(presentingVC: UIViewController, title: String, message: String) async throws -> URL {
-        try await withCheckedThrowingContinuation { continuation in
-            Task { @MainActor in
-                self.presentPairingFileAlert(on: presentingVC, isRetry: false) { url in
-                    if let url = url {
-                        continuation.resume(returning: url)
-                    } else {
-                        continuation.resume(throwing: OperationError.invalidPairingFile(reason: "URL is nil"))
-                    }
-                }
-            }
-        }
-    }
-}
-#endif

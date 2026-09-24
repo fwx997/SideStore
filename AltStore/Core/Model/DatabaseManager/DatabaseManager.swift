@@ -40,7 +40,7 @@ public class DatabaseManager: @unchecked Sendable
 
     private init()
     {
-        self.persistentContainer = PersistentContainer(name: "AltStore", bundle: Bundle(for: DatabaseManager.self))
+        self.persistentContainer = PersistentContainer(name: AppConstants.Database.name, bundle: Bundle(for: DatabaseManager.self))
         self.persistentContainer.preferredMergePolicy = MergePolicy()
         
         let observer = Unmanaged.passUnretained(self).toOpaque()
@@ -54,7 +54,7 @@ public class DatabaseManager: @unchecked Sendable
             let container = Self.shared.persistentContainer
             
             var databaseStore = container.persistentStoreCoordinator.persistentStores.first
-            let databaseStoreURL = databaseStore?.url ?? PersistentContainer.defaultDirectoryURL().appendingPathComponent("AltStore.sqlite")
+            let databaseStoreURL = databaseStore?.url ?? PersistentContainer.defaultDirectoryURL().appendingPathComponent(AppConstants.Database.fileName)
             
             // Reset the managed object context
             Self.shared.persistentContainer.viewContext.reset()
@@ -120,7 +120,6 @@ public class DatabaseManager: @unchecked Sendable
             CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), .willMigrateDatabase, nil, nil, true)
         }
 
-        try await self.migrateDatabaseToAppGroupIfNeeded()
         try await self.persistentContainer.loadPersistentStores()
         try await self.prepareDatabase()
     }
@@ -328,74 +327,31 @@ public class DatabaseManager: @unchecked Sendable
             
             installedApp.appExtensions = installedExtensions
             
-            let fileURL = installedApp.fileURL
+            let bundleURL = Bundle.Info.activeBundleURL
+            let altstoreAppID = StoreApp.altstoreAppID
+            let extensionBundleIDMap = installedExtensions.reduce(into: [String: String]()) { dict, ext in
+                dict[ext.resignedBundleIdentifier] = ext.bundleIdentifier
+            }
             
-            // zh-patch: always replace the cached App.app with the real running bundle.
-            // The old version-match check never detected the stale cached OFFICIAL English bundle
-            // (its recorded version equaled the installed one), causing resign to install English.
-            let replaceCachedApp = true
-            
-            if replaceCachedApp
-            {
-                let fileURL = installedApp.fileURL
-                let bundleURL = Bundle.Info.activeBundleURL
-                let altstoreAppID = StoreApp.altstoreAppID
-                let extensionBundleIDMap = installedExtensions.reduce(into: [String: String]()) { dict, ext in
-                    dict[ext.resignedBundleIdentifier] = ext.bundleIdentifier
-                }
+            // zh-patch (P2 退役, 2026-09-25): 上游已改为无条件从运行包同步缓存 + 内容指纹寻址
+            // (Apps/Payloads/<签名>), 旧英文包遮蔽问题结构性消失; fileURL 按指纹解析, 旧
+            // Apps/<id>/App.app 路径保留兜底。内联同步 (prepareTemporaryURL 为同步闭包), 无竞态。
+            FileManager.default.prepareTemporaryURL { temporaryFileURL in
+                do {
+                    try FileManager.default.copyItem(at: bundleURL, to: temporaryFileURL)
 
-                // zh-patch: run the cache sync INLINE (awaited) instead of a detached fire-and-forget task.
-                // The detached version raced with an immediately-started resign (reading a half-replaced cache → hang).
-                // The final replacement is atomic (replaceItemAt) so readers never see a partial bundle.
-                func update(_ bundle: Bundle, bundleID: String) throws
-                {
-                    let infoPlistURL = bundle.bundleURL.appendingPathComponent("Info.plist")
+                    guard let tempAppBundle = ALTApplication(fileURL: temporaryFileURL) else { throw ALTError(.invalidApp) }
+                    try tempAppBundle.updateInfoPlist(with: [kCFBundleIdentifierKey as String: altstoreAppID])
 
-                    guard var infoDictionary = bundle.completeInfoDictionary else { throw ALTError(.missingInfoPlist) }
-                    infoDictionary[kCFBundleIdentifierKey as String] = bundleID
-                    try (infoDictionary as NSDictionary).write(to: infoPlistURL)
-                }
-
-                do
-                {
-                    // 注意: 不能预创建目录, 否则 copyItem 会报 516 (同名已存在)
-                    let temporaryFileURL = FileManager.default.temporaryDirectory
-                        .appendingPathComponent(UUID().uuidString + ".app")
-                    do
-                    {
-                        try FileManager.default.copyItem(at: bundleURL, to: temporaryFileURL)
-
-                        guard let appBundle = Bundle(url: temporaryFileURL) else { throw ALTError(.invalidApp) }
-                        try update(appBundle, bundleID: altstoreAppID)
-
-                        if let tempAppBundle = ALTApplication(fileURL: temporaryFileURL)
-                        {
-                            for appExtension in tempAppBundle.appExtensions
-                            {
-                                guard let extensionBundle = Bundle(url: appExtension.fileURL) else { throw ALTError(.invalidApp) }
-                                guard let originalBundleID = extensionBundleIDMap[appExtension.bundleIdentifier] else { throw ALTError(.invalidApp) }
-                                try update(extensionBundle, bundleID: originalBundleID)
-                            }
-                        }
-
-                        if FileManager.default.fileExists(atPath: fileURL.path)
-                        {
-                            _ = try FileManager.default.replaceItemAt(fileURL, withItemAt: temporaryFileURL)
-                        }
-                        else
-                        {
-                            try FileManager.default.copyItem(at: temporaryFileURL, to: fileURL)
-                        }
+                    for appExtension in tempAppBundle.appExtensions {
+                        guard let originalBundleID = extensionBundleIDMap[appExtension.bundleIdentifier] else { throw ALTError(.invalidApp) }
+                        try appExtension.updateInfoPlist(with: [kCFBundleIdentifierKey as String: originalBundleID])
                     }
-                    catch
-                    {
-                        try? FileManager.default.removeItem(at: temporaryFileURL)
-                        throw error
-                    }
-                }
-                catch
-                {
-                    debugLog("Failed to copy SideStore app bundle to its proper location. \(error)")
+
+                    let (signature, _) = try CacheAppOperation.cachePayload(for: temporaryFileURL)
+                    installedApp.appBundleFingerprint = signature
+                } catch {
+                    debugLog("Failed to cache SideStore app bundle: \(error)")
                 }
             }
 
@@ -467,73 +423,6 @@ public class DatabaseManager: @unchecked Sendable
         if let provisioningProfile = localAppBundle.provisioningProfile {
             installedApp.refreshedDate = provisioningProfile.creationDate
             installedApp.expirationDate = provisioningProfile.expirationDate
-        }
-    }
-    
-    private func migrateDatabaseToAppGroupIfNeeded() async throws
-    {
-        // Only migrate if we haven't migrated yet and there's a valid AltStore app group.
-        guard UserDefaults.standard.requiresAppGroupMigration && Bundle.main.altstoreAppGroup != nil else { return }
-
-        let previousDatabaseURL = PersistentContainer.legacyDirectoryURL().appendingPathComponent("AltStore.sqlite")
-        let databaseURL = PersistentContainer.defaultDirectoryURL().appendingPathComponent("AltStore.sqlite")
-        
-        let previousAppsDirectoryURL = InstalledApp.legacyAppsDirectoryURL
-        let appsDirectoryURL = InstalledApp.appsDirectoryURL
-        
-        let databaseIntent = NSFileAccessIntent.writingIntent(with: databaseURL, options: [.forReplacing])
-        let appsIntent = NSFileAccessIntent.writingIntent(with: appsDirectoryURL, options: [.forReplacing])
-        
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            self.coordinator.coordinate(with: [databaseIntent, appsIntent], queue: self.coordinatorQueue) { (error) in
-                do
-                {
-                    if let error = error
-                    {
-                        throw error
-                    }
-                    
-                    let description = NSPersistentStoreDescription(url: previousDatabaseURL)
-                    
-                    // Disable WAL to remove extra files automatically during migration.
-                    description.setOption(["journal_mode": "DELETE"] as NSDictionary, forKey: NSSQLitePragmasOption)
-                    
-                    let persistentStoreCoordinator = NSPersistentStoreCoordinator(managedObjectModel: self.persistentContainer.managedObjectModel)
-                    
-                    // Migrate database
-                    if FileManager.default.fileExists(atPath: previousDatabaseURL.path)
-                    {
-                        if FileManager.default.fileExists(atPath: databaseURL.path, isDirectory: nil)
-                        {
-                            try FileManager.default.removeItem(at: databaseURL)
-                        }
-                        
-                        let previousDatabase = try persistentStoreCoordinator.addPersistentStore(ofType: description.type, configurationName: description.configuration, at: description.url, options: description.options)
-                        
-                        // Pass nil options to prevent later error due to self.persistentContainer using WAL.
-                        try persistentStoreCoordinator.migratePersistentStore(previousDatabase, to: databaseURL, options: nil, withType: NSSQLiteStoreType)
-                        
-                        try FileManager.default.removeItem(at: previousDatabaseURL)
-                    }
-                    
-                    // Migrate apps
-                    if FileManager.default.fileExists(atPath: previousAppsDirectoryURL.path, isDirectory: nil)
-                    {
-                        if(previousAppsDirectoryURL.path != appsDirectoryURL.path)
-                        {
-                            _ = try FileManager.default.replaceItemAt(appsDirectoryURL, withItemAt: previousAppsDirectoryURL)
-                        }
-                    }
-                    
-                    UserDefaults.standard.requiresAppGroupMigration = false
-                    continuation.resume()
-                }
-                catch
-                {
-                    debugLog("Failed to migrate database to app group: \(error)")
-                    continuation.resume(throwing: error)
-                }
-            }
         }
     }
     

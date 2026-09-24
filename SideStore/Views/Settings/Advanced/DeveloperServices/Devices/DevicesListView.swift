@@ -226,7 +226,7 @@ struct DevicesListView: View {
                             Task {
                                 isFetchingUDID = true
                                 defer { isFetchingUDID = false }
-                                if let foundUDID = try? await fetchUDID() {
+                                if let foundUDID = try? await safeFetchUDID() {
                                     newDeviceUDID = foundUDID
                                     if newDeviceName.isEmpty {
                                         #if !os(tvOS)

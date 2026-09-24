@@ -39,7 +39,7 @@ enum PipelineStep: OperationStep {
     case updateAppCertificate
     case embedSigningCert
     case cacheSigningCert
-    case cacheInfoPlist
+    case cacheResignedMetadata
     case patchInfoPlist
     case createIPA
 
@@ -47,7 +47,7 @@ enum PipelineStep: OperationStep {
         ObjectIdentifier(PerformBackupRestoreOperation.self):             .backupAppData,
         ObjectIdentifier(CacheAppOperation.self):                         .cacheApp,
         ObjectIdentifier(CacheSigningCertOperation.self):                 .cacheSigningCert,
-        ObjectIdentifier(CacheInfoPlistOperation.self):                   .cacheInfoPlist,
+        ObjectIdentifier(CacheResignedMetadataOperation.self):            .cacheResignedMetadata,
         ObjectIdentifier(PatchInfoPlistOperation.self):                   .patchInfoPlist,
         ObjectIdentifier(CleanStagedAppOperation.self):                   .cleanStagedApp,
         ObjectIdentifier(DeactivateAppOperation.self):                    .deactivateApp,
@@ -97,6 +97,7 @@ enum StandaloneStep: OperationStep {
     case syncAppIDs
     case fetchSource
     case scheduleExpirationWarningNotification
+    case injectBatchProfiles
     case unknown
 
     fileprivate static let stepMap: [ObjectIdentifier: StandaloneStep] = [
@@ -108,6 +109,7 @@ enum StandaloneStep: OperationStep {
         ObjectIdentifier(SyncAppIDsOperation.self):                              .syncAppIDs,
         ObjectIdentifier(FetchSourceOperation.self):                             .fetchSource,
         ObjectIdentifier(ScheduleExpirationWarningNotificationOperation.self):   .scheduleExpirationWarningNotification,
+        ObjectIdentifier(InjectBatchProfilesOperation.self):                     .injectBatchProfiles,
     ]
 
     static func step(for type: Any.Type) -> StandaloneStep? {

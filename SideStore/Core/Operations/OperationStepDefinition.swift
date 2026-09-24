@@ -55,7 +55,7 @@ struct PipelineStepDefinition {
         PipelineExecutionStep(.sendApp,                          18),
         PipelineExecutionStep(.installApp,                       15),
         PipelineExecutionStep(.cacheSigningCert,                  1),
-        PipelineExecutionStep(.cacheInfoPlist,                    1),
+        PipelineExecutionStep(.cacheResignedMetadata,             1),
         PipelineExecutionStep(.cleanStagedApp,                    1)
     ]
 
@@ -75,21 +75,24 @@ struct PipelineStepDefinition {
         PipelineExecutionStep(.sendApp,                          18),
         PipelineExecutionStep(.installApp,                       21),
         PipelineExecutionStep(.cacheSigningCert,                  1),
-        PipelineExecutionStep(.cleanStagedApp,                    2)
+        PipelineExecutionStep(.cacheResignedMetadata,             1),
+        PipelineExecutionStep(.cleanStagedApp,                    1)
     ]
 
     static let refresh: [PipelineExecutionStep] = [
         PipelineExecutionStep(.updateAppCertificate,              5),
         PipelineExecutionStep(.verifyCertificate,                10),
         PipelineExecutionStep(.fetchProvisioningProfiles,        45),
-        PipelineExecutionStep(.refreshApp,                       40)
+        PipelineExecutionStep(.cacheResignedMetadata,             1),
+        PipelineExecutionStep(.refreshApp,                       39)
     ]
 
     static let activateLegacy: [PipelineExecutionStep] = [
         PipelineExecutionStep(.updateAppCertificate,              5),
         PipelineExecutionStep(.verifyCertificate,                10),
         PipelineExecutionStep(.fetchProvisioningProfiles,        45),
-        PipelineExecutionStep(.refreshApp,                       40)
+        PipelineExecutionStep(.cacheResignedMetadata,             1),
+        PipelineExecutionStep(.refreshApp,                       39)
     ]
 
     static let activate: [PipelineExecutionStep] = [
@@ -123,10 +126,11 @@ struct PipelineStepDefinition {
         PipelineExecutionStep(.sendApp,                          10),
         PipelineExecutionStep(.installApp,                       15),
         PipelineExecutionStep(.cacheSigningCert,                  1),
+        PipelineExecutionStep(.cacheResignedMetadata,             1),
         // cleanup old backup
         PipelineExecutionStep(.removeBackupData,                  2),
         // cleanup staged app
-        PipelineExecutionStep(.cleanStagedApp,                    2)
+        PipelineExecutionStep(.cleanStagedApp,                    1)
     ]
 
     static let deactivateLegacy: [PipelineExecutionStep] = [
@@ -185,15 +189,17 @@ struct PipelineStepDefinition {
         PipelineExecutionStep(.sendApp,                           1),
         PipelineExecutionStep(.installApp,                        2),
         PipelineExecutionStep(.cacheSigningCert,                  1),
+        PipelineExecutionStep(.cacheResignedMetadata,             1),
         // cleanup staged app
-        PipelineExecutionStep(.cleanStagedApp,                    2)
+        PipelineExecutionStep(.cleanStagedApp,                    1)
     ]
 
     static let restoreLegacy: [PipelineExecutionStep] = [
         PipelineExecutionStep(.updateAppCertificate,              5),
         PipelineExecutionStep(.verifyCertificate,                10),
         PipelineExecutionStep(.fetchProvisioningProfiles,        45),
-        PipelineExecutionStep(.refreshApp,                       40)
+        PipelineExecutionStep(.cacheResignedMetadata,             1),
+        PipelineExecutionStep(.refreshApp,                       39)
     ]
 
     static let restore: [PipelineExecutionStep] = [
@@ -227,10 +233,11 @@ struct PipelineStepDefinition {
         PipelineExecutionStep(.sendApp,                          10),
         PipelineExecutionStep(.installApp,                       15),
         PipelineExecutionStep(.cacheSigningCert,                  1),
+        PipelineExecutionStep(.cacheResignedMetadata,             1),
         // cleanup old backup
         PipelineExecutionStep(.removeBackupData,                  2),
         // cleanup staged app
-        PipelineExecutionStep(.cleanStagedApp,                    2)
+        PipelineExecutionStep(.cleanStagedApp,                    1)
     ]
 
     static let removeApp: [PipelineExecutionStep] = [
@@ -246,9 +253,11 @@ struct PipelineStepDefinition {
         PipelineExecutionStep(.removeApp,                         2)
     ]
 
+    static let reinstall = install
+
     static func steps(for operation: AppOperation) -> [PipelineExecutionStep] {
         switch operation {
-        case .install, .update:
+        case .install, .update, .reinstall:
             return install
         case .resign:
             return resign
@@ -298,10 +307,15 @@ struct StandaloneStepDefinition {
     static let scheduleExpirationWarningNotification: [StandaloneExecutionStep] = [
         StandaloneExecutionStep(.scheduleExpirationWarningNotification, 100)
     ]
+
+    static let injectBatchProfiles: [StandaloneExecutionStep] = [
+        StandaloneExecutionStep(.injectBatchProfiles, 100)
+    ]
 }
 
 extension Array where Element == PipelineExecutionStep {
     static var install:              [PipelineExecutionStep] { PipelineStepDefinition.install              }
+    static var reinstall:            [PipelineExecutionStep] { PipelineStepDefinition.reinstall            }
     static var resign:               [PipelineExecutionStep] { PipelineStepDefinition.resign               }
     static var refresh:              [PipelineExecutionStep] { PipelineStepDefinition.refresh              }
     static var activate:             [PipelineExecutionStep] { PipelineStepDefinition.activate             }
@@ -321,4 +335,5 @@ extension Array where Element == StandaloneExecutionStep {
     static var enableJIT:                             [StandaloneExecutionStep] { StandaloneStepDefinition.enableJIT                             }
     static var syncAppIDs:                            [StandaloneExecutionStep] { StandaloneStepDefinition.syncAppIDs                            }
     static var scheduleExpirationWarningNotification: [StandaloneExecutionStep] { StandaloneStepDefinition.scheduleExpirationWarningNotification }
+    static var injectBatchProfiles:                   [StandaloneExecutionStep] { StandaloneStepDefinition.injectBatchProfiles                   }
 }

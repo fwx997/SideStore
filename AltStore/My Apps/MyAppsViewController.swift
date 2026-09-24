@@ -1188,6 +1188,76 @@ private extension MyAppsViewController
         }
     }
     
+    func reinstallFromCache(_ installedApp: InstalledApp)
+    {
+        InstallAppDialog.present(installedApp: installedApp, from: self) { [weak self] in
+            guard let self else { return }
+            Task { @MainActor in
+                let previousProgress = AppManager.shared.installationProgress(for: installedApp)
+                guard previousProgress == nil else {
+                    previousProgress?.cancel()
+                    return
+                }
+                
+                AppManager.shared.reinstall(installedApp, presentingViewController: self) { [weak self] (result) in
+                    Task { @MainActor in
+                        switch result
+                        {
+                        case .failure(let error) where error is CancellationError:
+                            debugLog("Reinstall from cache cancelled.")
+                            self?.reconfigureVisibleCells()
+                        case .failure(let error):
+                            debugLog("Failed to reinstall from cache: \(error)")
+                            if let self {
+                                ToastView(error: error, opensLog: true).show(in: self)
+                            }
+                            self?.reconfigureVisibleCells()
+                        case .success(let app):
+                            debugLog("Successfully reinstalled app from cache: \(app.name)")
+                            self?.reconfigureVisibleCells()
+                        }
+                    }
+                }
+                self.reconfigureVisibleCells()
+            }
+        }
+    }
+    
+    func reinstallFromSource(_ storeApp: StoreApp)
+    {
+        InstallAppDialog.present(storeApp: storeApp, from: self) { [weak self] in
+            guard let self else { return }
+            Task { @MainActor in
+                let previousProgress = AppManager.shared.installationProgress(for: storeApp)
+                guard previousProgress == nil else {
+                    previousProgress?.cancel()
+                    return
+                }
+                
+                _ = AppManager.shared.install(.app(storeApp), presentingViewController: self) { [weak self] (result) in
+                    Task { @MainActor in
+                        switch result
+                        {
+                        case .failure(let error) where error is CancellationError:
+                            debugLog("Reinstall from source cancelled.")
+                            self?.reconfigureVisibleCells()
+                        case .failure(let error):
+                            debugLog("Failed to reinstall from source: \(error)")
+                            if let self {
+                                ToastView(error: error, opensLog: true).show(in: self)
+                            }
+                            self?.reconfigureVisibleCells()
+                        case .success(let app):
+                            debugLog("Successfully reinstalled app from source: \(app.name)")
+                            self?.reconfigureVisibleCells()
+                        }
+                    }
+                }
+                self.reconfigureVisibleCells()
+            }
+        }
+    }
+    
     func activate(_ installedApp: InstalledApp)
     {
         Task { @MainActor in
@@ -1217,11 +1287,7 @@ private extension MyAppsViewController
                     
             if !UserDefaults.standard.isAppLimitDisabled && UserDefaults.standard.activeAppsLimit != nil
             {
-                guard let appBundle = ALTApplication(fileURL: installedApp.fileURL) else {
-                    return finish(.failure(OperationError.invalidApp(reason: "Could not load app bundle at '\(installedApp.fileURL.lastPathComponent)'")))
-                }
-                
-                AppManager.shared.deactivateApps(for: appBundle, presentingViewController: self) { result in
+                self.promptToDeactivateApp(for: installedApp) { result in
                     installedApp.managedObjectContext?.perform {
                         switch result
                         {
@@ -1239,6 +1305,56 @@ private extension MyAppsViewController
                 AppManager.shared.activate(installedApp, presentingViewController: self, completionHandler: finish(_:))
             }
         }
+    }
+
+    private func promptToDeactivateApp(for installedApp: InstalledApp, completion: @escaping (Result<Void, Error>) -> Void) {
+        guard let deactivationCandidates = AppManager.shared.appsToDeactivate(for: installedApp) else {
+            return completion(.success(()))
+        }
+
+        let title: String
+        let message: String
+
+        if UserDefaults.standard.activeAppLimitIncludesExtensions {
+            if installedApp.appExtensions.isEmpty {
+                title = NSLocalizedString("Cannot Activate More than 3 Apps", comment: "")
+                message = NSLocalizedString("Non-developer Apple IDs are limited to 3 active apps and app extensions. Please choose an app to deactivate.", comment: "")
+            } else {
+                title = NSLocalizedString("Cannot Activate More than 3 Apps and App Extensions", comment: "")
+                let extCount = installedApp.appExtensions.count
+                let extText = extCount == 1 ? NSLocalizedString("app extension", comment: "") : NSLocalizedString("app extensions", comment: "")
+                message = String(format: NSLocalizedString("Non-developer Apple IDs are limited to 3 active apps and app extensions, and \"%@\" contains %@ %@. Please choose an app to deactivate.", comment: ""), installedApp.name, NSNumber(value: extCount), extText)
+            }
+        } else {
+            title = NSLocalizedString("Cannot Activate More than 3 Apps", comment: "")
+            message = NSLocalizedString("Non-developer Apple IDs are limited to 3 active apps. Please choose an app to deactivate.", comment: "")
+        }
+
+        let alertController = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alertController.addAction(UIAlertAction(title: UIAlertAction.cancel.title, style: UIAlertAction.cancel.style) { _ in
+            completion(.failure(OperationError.cancelled))
+        })
+
+        for activeApp in deactivationCandidates {
+            alertController.addAction(UIAlertAction(title: activeApp.name, style: .default) { [weak self] _ in
+                guard let self else { return }
+                activeApp.isActive = false
+
+                AppManager.shared.deactivate(activeApp, presentingViewController: self) { result in
+                    switch result {
+                    case .failure(let error):
+                        activeApp.managedObjectContext?.perform {
+                            activeApp.isActive = true
+                            completion(.failure(error))
+                        }
+                    case .success:
+                        self.promptToDeactivateApp(for: installedApp, completion: completion)
+                    }
+                }
+            })
+        }
+
+        self.present(alertController, animated: true)
     }
     
     func deactivate(_ installedApp: InstalledApp, completionHandler: ((Result<InstalledApp, Error>) -> Void)? = nil)
@@ -1435,8 +1551,8 @@ private extension MyAppsViewController
         }
     }
     
-    func importBackup(for installedApp: InstalledApp){
-        ImportExport.importBackup(presentingViewController: self, for: installedApp) { result in
+    func importBackup(for installedApp: InstalledApp, isZip: Bool = false){
+        ImportExport.importBackup(presentingViewController: self, for: installedApp, isZip: isZip) { result in
             var toast: ToastView
             switch(result){
             case .failure(let error):
@@ -1518,12 +1634,26 @@ private extension MyAppsViewController
         }
     }
     
-    func exportBackup(for installedApp: InstalledApp)
+    func exportBackup(for installedApp: InstalledApp, asZip: Bool = false)
     {
         guard let backupURL = FileManager.default.backupDirectoryURL(for: installedApp) else { return }
         
         #if !os(tvOS)
-        let documentPicker = UIDocumentPickerViewController(forExporting: [backupURL], asCopy: true)
+        let exportURL: URL
+        if asZip {
+            let zipURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(installedApp.name) Backup.zip")
+            do {
+                try FileManager.default.zipDirectory(at: backupURL, to: zipURL)
+                exportURL = zipURL
+            } catch {
+                ToastView(error: error, opensLog: true).show(in: self)
+                return
+            }
+        } else {
+            exportURL = backupURL
+        }
+        
+        let documentPicker = UIDocumentPickerViewController(forExporting: [exportURL], asCopy: true)
         
         // Don't set delegate to avoid conflicting with import callbacks.
         // documentPicker.delegate = self
@@ -1950,6 +2080,20 @@ extension MyAppsViewController
             self.resign(installedApp)
         }
         
+        let reinstallFromCacheAction = UIAction(title: NSLocalizedString("From Cache", comment: ""), image: UIImage(systemName: "signature")) { (action) in
+            self.reinstallFromCache(installedApp)
+        }
+        
+        var reinstallSubmenuActions: [UIMenuElement] = [reinstallFromCacheAction]
+        if let storeApp = installedApp.storeApp
+        {
+            let reinstallFromSourceAction = UIAction(title: NSLocalizedString("From Source", comment: ""), image: UIImage(systemName: "icloud.and.arrow.down")) { [weak self] (action) in
+                self?.reinstallFromSource(storeApp)
+            }
+            reinstallSubmenuActions.append(reinstallFromSourceAction)
+        }
+        let reinstallMenu = UIMenu(title: NSLocalizedString("Reinstall", comment: ""), image: UIImage(systemName: "arrow.triangle.2.circlepath"), children: reinstallSubmenuActions)
+        
         let activateAction = UIAction(title: NSLocalizedString("Activate", comment: ""), image: UIImage(systemName: "checkmark.circle")) { (action) in
             self.activate(installedApp)
         }
@@ -1974,13 +2118,25 @@ extension MyAppsViewController
             self.backup(installedApp)
         }
         
-        let exportBackupAction = UIAction(title: NSLocalizedString("Export Backup", comment: ""), image: UIImage(systemName: "arrow.up.doc")) { (action) in
-            self.exportBackup(for: installedApp)
+        let exportRawBackupAction = UIAction(title: NSLocalizedString("Export (Raw)", comment: ""), image: UIImage(systemName: "folder")) { (action) in
+            self.exportBackup(for: installedApp, asZip: false)
         }
         
-        let importBackupAction = UIAction(title: NSLocalizedString("Import Backup", comment: ""), image: UIImage(systemName: "arrow.down.doc")) { (action) in
-            self.importBackup(for: installedApp)
+        let exportZipBackupAction = UIAction(title: NSLocalizedString("Export (ZIP)", comment: ""), image: UIImage(systemName: "doc.zipper") ?? UIImage(systemName: "archivebox")) { (action) in
+            self.exportBackup(for: installedApp, asZip: true)
         }
+        
+        let exportBackupMenu = UIMenu(title: NSLocalizedString("Export Backup", comment: ""), image: UIImage(systemName: "arrow.up.doc"), children: [exportRawBackupAction, exportZipBackupAction])
+        
+        let importRawBackupAction = UIAction(title: NSLocalizedString("Import (Raw)", comment: ""), image: UIImage(systemName: "folder")) { (action) in
+            self.importBackup(for: installedApp, isZip: false)
+        }
+        
+        let importZipBackupAction = UIAction(title: NSLocalizedString("Import (ZIP)", comment: ""), image: UIImage(systemName: "doc.zipper") ?? UIImage(systemName: "archivebox")) { (action) in
+            self.importBackup(for: installedApp, isZip: true)
+        }
+        
+        let importBackupMenu = UIMenu(title: NSLocalizedString("Import Backup", comment: ""), image: UIImage(systemName: "arrow.down.doc"), children: [importRawBackupAction, importZipBackupAction])
         
         let restoreBackupAction = UIAction(title: NSLocalizedString("Restore Backup", comment: "Restores the last or current backup of this app"), image: UIImage(systemName: "arrow.down.doc")) { (action) in
             self.restore(installedApp)
@@ -2045,7 +2201,7 @@ extension MyAppsViewController
             
             if backupExists
             {
-                backupSubmenuActions.append(exportBackupAction)
+                backupSubmenuActions.append(exportBackupMenu)
                 
                 if installedApp.isActive
                 {
@@ -2063,7 +2219,7 @@ extension MyAppsViewController
         if installedApp.isActive
         {
             // import backup into shared backups dir is allowed
-            backupSubmenuActions.append(importBackupAction)
+            backupSubmenuActions.append(importBackupMenu)
         }
         
         // have an option to restore the n-1 backup
@@ -2073,23 +2229,23 @@ extension MyAppsViewController
         
         let backupMenu = UIMenu(title: NSLocalizedString("Backup", comment: ""), image: UIImage(systemName: "archivebox"), children: backupSubmenuActions)
         
-        let setCertAction = UIAction(title: NSLocalizedString("Change Certificate", comment: ""), image: UIImage(systemName: "key.icloud")) { [weak self] _ in
-            self?.presentSetCertificateAlert(for: installedApp)
+        let setProfileAction = UIAction(title: NSLocalizedString("Change Provisioning Profile", comment: ""), image: UIImage(systemName: "doc.badge.gearshape")) { [weak self] _ in
+            self?.presentSetProfileAlert(for: installedApp)
         }
         
-        let resetCertAction = UIAction(title: NSLocalizedString("Reset Certificate", comment: ""), image: UIImage(systemName: "arrow.counterclockwise")) { [weak self] _ in
-            self?.resetCertificate(for: installedApp)
+        let resetProfileAction = UIAction(title: NSLocalizedString("Reset Provisioning Profile", comment: ""), image: UIImage(systemName: "arrow.counterclockwise")) { [weak self] _ in
+            self?.resetProfile(for: installedApp)
         }
         
-        var certSubmenuActions: [UIMenuElement] = [setCertAction]
-        if installedApp.certificateSerialNumber != nil {
-            certSubmenuActions.append(resetCertAction)
+        var profileSubmenuActions: [UIMenuElement] = [setProfileAction]
+        if ProfileManager.shared.getAssignedProfile(for: installedApp.bundleIdentifier) != nil || installedApp.certificateSerialNumber != nil {
+            profileSubmenuActions.append(resetProfileAction)
         }
-        let certificateMenu = UIMenu(title: NSLocalizedString("Certificate", comment: ""), image: UIImage(systemName: "key"), children: certSubmenuActions)
+        let profileMenu = UIMenu(title: NSLocalizedString("Provisioning Profile", comment: ""), image: UIImage(systemName: "doc.plaintext"), children: profileSubmenuActions)
         
         if installedApp.resignedBundleIdentifier.isAltStoreAppID
         {
-            actions = [refreshAction, resignAction, certificateMenu, changeIconMenu]
+            actions = [refreshAction, resignAction, reinstallMenu, profileMenu, changeIconMenu]
         }
         else
         {
@@ -2098,13 +2254,15 @@ extension MyAppsViewController
                 actions.append(openMenu)
                 actions.append(refreshAction)
                 actions.append(resignAction)
-                actions.append(certificateMenu)
+                actions.append(reinstallMenu)
+                actions.append(profileMenu)
             }
             else
             {
                 actions.append(activateAction)
                 actions.append(resignAction)
-                actions.append(certificateMenu)
+                actions.append(reinstallMenu)
+                actions.append(profileMenu)
             }
             
             if installedApp.isActive
@@ -2157,7 +2315,8 @@ extension MyAppsViewController
             openMenu,
             refreshAction,
             resignAction,
-            certificateMenu,
+            reinstallMenu,
+            profileMenu,
             activateAction,
             jitAction,
             changeIconMenu,
@@ -2721,37 +2880,27 @@ extension MyAppsViewController: UIImagePickerControllerDelegate, UINavigationCon
 #endif
 
 extension MyAppsViewController {
-    private func presentSetCertificateAlert(for installedApp: InstalledApp) {
-        let picker = SignableCertificatesListViewController(installedApp: installedApp)
-        picker.onSelectCertificate = { [weak self] cert in
-            guard let self = self else { return }
-            
-            let binaryCert = CertificateManager.shared.getSigningCertificate(at: installedApp.fileURL)
-            if let binaryCert = binaryCert, cert.serialNumber == binaryCert.serialNumber {
-                let alert = UIAlertController(
-                    title: NSLocalizedString("Same Certificate", comment: ""),
-                    message: NSLocalizedString("The selected certificate is already being used for this app. Please use the Resign option instead.", comment: ""),
-                    preferredStyle: .alert
-                )
-                alert.addAction(UIAlertAction(title: NSLocalizedString("OK", comment: ""), style: .default))
-                self.present(alert, animated: true)
-            } else {
-                self.setCertificate(cert, for: installedApp)
-            }
+    private func presentSetProfileAlert(for installedApp: InstalledApp) {
+        let picker = SelectProfileViewController(installedApp: installedApp)
+        picker.onSelectProfile = { [weak self] profile in
+            self?.setProfile(profile, for: installedApp)
         }
         picker.present(from: self)
     }
-    
-    private func setCertificate(_ cert: ALTCertificate, for installedApp: InstalledApp) {
+
+    private func setProfile(_ profile: ALTProvisioningProfile, for installedApp: InstalledApp) {
+        ProfileManager.shared.setAssignedProfile(profile, for: installedApp.bundleIdentifier)
+        let matchingCert = ProfileManager.shared.getMatchingCertificate(for: profile)
         let context = DatabaseManager.shared.viewContext
         context.performAndWait {
-            installedApp.certificateSerialNumber = cert.serialNumber
+            installedApp.certificateSerialNumber = matchingCert?.serialNumber
             try? context.save()
         }
         self.resign(installedApp)
     }
-    
-    private func resetCertificate(for installedApp: InstalledApp) {
+
+    private func resetProfile(for installedApp: InstalledApp) {
+        ProfileManager.shared.setAssignedProfile(nil, for: installedApp.bundleIdentifier)
         let context = DatabaseManager.shared.viewContext
         context.performAndWait {
             installedApp.certificateSerialNumber = nil

@@ -52,12 +52,7 @@ final class DeviceRegistrationFlow: @unchecked Sendable {
         }
         
         do {
-            let readyResult = await minimuxer.core.isReady(withNetworkCheck: false)
-            if case .failure(let minimuxerError) = readyResult {
-                throw minimuxerError.asOperationError
-            }
-            
-            let udid = try await fetchUDID()
+            let udid = try await safeFetchUDID()
             
             if isCellularEnabled {
                 await CellularRefreshManager.shared.turnOnDataIfNeeded(addOnDelay: 2.0)

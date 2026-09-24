@@ -184,7 +184,10 @@ final class VerifyAppOperation: BasePipelineOperation<InstallAppOperationContext
             }
             
         case .added:
-            let installedAppURL = InstalledApp.fileURL(for: appBundle)
+            guard let installedApp = self.context.installedApp else {
+                throw OperationError.missingAppBundle(reason: "Could not locate installed app for '\(appBundle.name)' to verify added permissions.")
+            }
+            let installedAppURL = installedApp.fileURL
             guard let previousApp = ALTApplication(fileURL: installedAppURL) else {
                 throw OperationError.missingAppBundle(reason: "Could not locate installed bundle for '\(appBundle.name)' at '\(installedAppURL.lastPathComponent)'")
             }
@@ -230,7 +233,7 @@ final class VerifyAppOperation: BasePipelineOperation<InstallAppOperationContext
 
     private func privacyPermissions(for appBundle: ALTApplication) -> [ALTAppPrivacyPermission] {
         return ([appBundle] + appBundle.appExtensions).flatMap { (app) in
-            let permissions = app.bundle.infoDictionary?.keys.compactMap { key -> ALTAppPrivacyPermission? in
+            let permissions = app.infoPlist.keys.compactMap { key -> ALTAppPrivacyPermission? in
                 if #available(iOS 16, tvOS 16, *) {
                     guard key.wholeMatch(of: Regex.privacyPermission) != nil else { return nil }
                 } else {
@@ -238,7 +241,7 @@ final class VerifyAppOperation: BasePipelineOperation<InstallAppOperationContext
                 }
                 
                 return ALTAppPrivacyPermission(rawValue: key)
-            } ?? []
+            }
             
             return permissions
         }

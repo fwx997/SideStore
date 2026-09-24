@@ -31,7 +31,6 @@ struct ActivityViewController: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
-typealias ActivityView = ActivityViewController
 
 #else
 import UIKit
@@ -64,6 +63,5 @@ struct ActivityViewController: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: UIViewController, context: Context) {}
 }
 
-typealias ActivityView = ActivityViewController
 
 #endif

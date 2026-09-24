@@ -24,15 +24,31 @@ class FetchProvisioningProfilesOperation: BasePipelineOperation<InstallAppOperat
             self.debugLog("[FetchProvisioningProfiles] Context has pre-existing error: \(error.localizedDescription)")
             throw error
         }
-        
-        let team = try await AuthManager.shared.getAuthenticatedTeam()
-        
+
         guard let targetAppBundle = self.context.targetAppBundle else {
             self.debugLog("[FetchProvisioningProfiles] Target app bundle missing in context.")
             throw OperationError.invalidParameters("FetchProvisioningProfilesOperation: context.targetAppBundle is nil")
         }
-        
+
         let effectiveBundleId = self.context.targetBundleIdentifier
+
+        let appExtensions = targetAppBundle.appExtensions
+
+        if let overrideProfile = self.context.overrideProvisioningProfile {
+            self.debugLog("[FetchProvisioningProfiles] Using override provisioning profile '\(overrideProfile.name)' (\(overrideProfile.uuid)) for \(effectiveBundleId)")
+            var profiles = [effectiveBundleId: overrideProfile]
+            if !self.context.useMainProfile, !appExtensions.isEmpty {
+                for appExtension in appExtensions {
+                    let updatedExtensionBundleId = appExtension.bundleIdentifier.replacingOccurrences(of: targetAppBundle.bundleIdentifier, with: effectiveBundleId)
+                    profiles[updatedExtensionBundleId] = overrideProfile
+                }
+            }
+            self.setProgress(100)
+            self.debugLog("[FetchProvisioningProfiles] Total override profiles prepared: \(profiles.count) -> keys: \(Array(profiles.keys))")
+            return profiles
+        }
+
+        let team = try await AuthManager.shared.getAuthenticatedTeam()
         self.debugLog("[FetchProvisioningProfiles] Executing for app \(targetAppBundle.bundleIdentifier), targetBundleID: \(effectiveBundleId), team: \(team.identifier), useMainProfile: \(self.context.useMainProfile)")
         
         self.setProgress(10)
@@ -43,16 +59,16 @@ class FetchProvisioningProfilesOperation: BasePipelineOperation<InstallAppOperat
         
         var profiles = [effectiveBundleId: profile]
         
-        guard !self.context.useMainProfile, !targetAppBundle.appExtensions.isEmpty else {
+        guard !self.context.useMainProfile, !appExtensions.isEmpty else {
             self.setProgress(100)
             self.debugLog("[FetchProvisioningProfiles] Total profiles prepared: \(profiles.count) -> keys: \(Array(profiles.keys))")
             return profiles
         }
         
         self.setProgress(50)
-        self.debugLog("[FetchProvisioningProfiles] Preparing profiles for \(targetAppBundle.appExtensions.count) app extensions...")
+        self.debugLog("[FetchProvisioningProfiles] Preparing profiles for \(appExtensions.count) app extensions...")
         try await withThrowingTaskGroup(of: (String, ALTProvisioningProfile).self) { group in
-            for appExtension in targetAppBundle.appExtensions {
+            for appExtension in appExtensions {
                 group.addTask {
                     self.verboseLog("[FetchProvisioningProfiles] Preparing extension profile for \(appExtension.bundleIdentifier)...")
                     let extProfile = try await self.provisionAndFetchProfile(for: appExtension, parentAppBundle: targetAppBundle, team: team)
@@ -64,7 +80,7 @@ class FetchProvisioningProfilesOperation: BasePipelineOperation<InstallAppOperat
             }
             
             var completedCount = 0
-            let totalExtensions = targetAppBundle.appExtensions.count
+            let totalExtensions = appExtensions.count
             let startProgress = self.progress.completedUnitCount
             let endProgress: Int64 = 100
             let range = endProgress - startProgress
@@ -127,27 +143,26 @@ class FetchProvisioningProfilesOperation: BasePipelineOperation<InstallAppOperat
     private func provisionAndFetchProfile(for targetAppBundle: ALTApplication,
                                           parentAppBundle: ALTApplication?,
                                           team: ALTTeam) async throws -> ALTProvisioningProfile {
-        let preferredBundleID = await self.getPreferredBundleID(for: targetAppBundle, team: team)
-        
-        let bundleID: String
-        
-        if let preferredBundleID = preferredBundleID {
-            bundleID = preferredBundleID
-            self.debugLog("[FetchProvisioningProfiles] Using preferredBundleID: \(bundleID)")
+        let parentID: String
+        if let preferredBundleID = await self.getPreferredBundleID(for: targetAppBundle, team: team) {
+            parentID = preferredBundleID
+        } else if self.context.appendTeamID {
+            parentID = "\(self.context.targetBundleIdentifier).\(team.identifier)"
         } else {
-            let parentBundleID = parentAppBundle?.bundleIdentifier ?? targetAppBundle.bundleIdentifier
-            let effectiveParentBundleID = self.context.targetBundleIdentifier
-            let updatedParentBundleID = self.context.appendTeamID ? (effectiveParentBundleID + "." + team.identifier) : effectiveParentBundleID
+            parentID = self.context.targetBundleIdentifier
+        }
 
-            if parentAppBundle != nil,
-               targetAppBundle.bundleIdentifier.hasPrefix(parentBundleID + ".") {
-                let suffix = String(targetAppBundle.bundleIdentifier.dropFirst(parentBundleID.count))
-                bundleID = updatedParentBundleID + suffix
-            } else {
-                bundleID = updatedParentBundleID
+        let bundleID: String
+        if let parentAppBundle = parentAppBundle {
+            guard targetAppBundle.bundleIdentifier.hasPrefix(parentAppBundle.bundleIdentifier + ".") else {
+                throw OperationError.invalidApp(reason: "Extension bundle ID '\(targetAppBundle.bundleIdentifier)' does not start with parent bundle ID '\(parentAppBundle.bundleIdentifier)'.")
             }
-            self.debugLog("[FetchProvisioningProfiles] Constructed mangled bundleID: \(bundleID) (effectiveParent: \(effectiveParentBundleID), appendTeamID: \(self.context.appendTeamID), team: \(team.identifier))")
-
+            let suffix = String(targetAppBundle.bundleIdentifier.dropFirst(parentAppBundle.bundleIdentifier.count))
+            bundleID = parentID + suffix
+            self.debugLog("[FetchProvisioningProfiles] Extension bundleID with suffix: \(bundleID)")
+        } else {
+            bundleID = parentID
+            self.debugLog("[FetchProvisioningProfiles] App bundleID: \(bundleID)")
         }
         
         let preferredName: String
@@ -216,7 +231,9 @@ private extension FetchProvisioningProfilesOperation{
     }
     
     func updateFeatures(for appID: ALTAppID, targetAppBundle: ALTApplication, team: ALTTeam) async throws -> ALTAppID {
-        var entitlements = targetAppBundle.entitlements
+        let bundleID = targetAppBundle.bundleIdentifier
+        var entitlements = self.context.customEntitlementsByBundleID[bundleID]
+            ?? targetAppBundle.entitlements
         for (key, value) in context.additionalEntitlements {
             entitlements[key] = value
         }
@@ -283,7 +300,9 @@ private extension FetchProvisioningProfilesOperation{
     }
     
     func updateAppGroups(for appID: ALTAppID, targetAppBundle: ALTApplication, team: ALTTeam) async throws -> ALTAppID {
-        var entitlements = targetAppBundle.entitlements
+        let bundleID = targetAppBundle.bundleIdentifier
+        var entitlements = self.context.customEntitlementsByBundleID[bundleID]
+            ?? targetAppBundle.entitlements
         for (key, value) in self.context.additionalEntitlements {
             entitlements[key] = value
         }

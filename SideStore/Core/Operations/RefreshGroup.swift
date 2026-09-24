@@ -16,6 +16,7 @@ final class RefreshGroup: NSObject
     let sharedContext: SharedPipelineContext
     let progress = Progress.discreteProgress(totalUnitCount: 100)
     var error: Error?
+    var isCellularRefreshGroup: Bool = false
     let operationStartTime: CFAbsoluteTime = CFAbsoluteTimeGetCurrent()
     
     var completionHandler: (([String: Result<InstalledApp, Error>]) -> Void)?

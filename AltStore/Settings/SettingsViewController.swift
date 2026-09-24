@@ -77,22 +77,26 @@ extension SettingsViewController
         case sendFeedback           // row 0 - Send Feedback
         case refreshAttempts        // row 1 - View Refresh Attempts
         case refreshSideJITServer   // row 2 - SideJITServer
-        case resetPairingFile       // row 3 - Reset Pairing File
+        case pairingFileManagement  // row 3 - Pairing File Management
         case anisetteServers        // row 4 - Anisette Servers
         case connectionConfig       // row 5 - Connection Configuration
-        case developerServices      // row 6 - Developer Portal Services
-        case certificateManagement  // row 7 - Certificate Management
-        case backupAndRestore       // row 8 - Backup & Restore
-        case userCustomizations     // row 9 - User Customizations
+        case networkDiscovery       // row 6 - Network Discovery
+        case developerServices      // row 7 - Developer Portal Services
+        case profileManagement      // row 8 - Profile Management
+        case certificateManagement  // row 9 - Certificate Management
+        case backupAndRestore       // row 10 - Backup & Restore
+        case userCustomizations     // row 11 - User Customizations
 
         static var allCases: [AdvancedSettingsRow] {
-            var rows: [AdvancedSettingsRow] = [.sendFeedback, .refreshAttempts, .refreshSideJITServer, .resetPairingFile]
+            var rows: [AdvancedSettingsRow] = [.sendFeedback, .refreshAttempts, .refreshSideJITServer, .pairingFileManagement]
             if !UserDefaults.standard.useOnDeviceAnisette {
                 rows.append(.anisetteServers)
             }
             rows.append(contentsOf: [
                 .connectionConfig,
+                .networkDiscovery,
                 .developerServices,
+                .profileManagement,
                 .certificateManagement,
                 .backupAndRestore,
                 .userCustomizations
@@ -299,12 +303,13 @@ final class SettingsViewController: UITableViewController
     }
     
     override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
-        if segue.identifier == "anisetteServers" || segue.identifier == "developerServices" || segue.identifier == "certificateManagement" || segue.identifier == "diagnostics" {
+        if segue.identifier == "anisetteServers" || segue.identifier == "developerServices" || segue.identifier == "profileManagement" || segue.identifier == "certificateManagement" || segue.identifier == "diagnostics" {
             let controller = segue.destination
             
         #if !os(tvOS)
             if segue.identifier == "anisetteServers"        || 
                 segue.identifier == "developerServices"      ||
+                segue.identifier == "profileManagement"      ||
                 segue.identifier == "certificateManagement" || 
                 segue.identifier == "diagnostics"
             {
@@ -1275,33 +1280,16 @@ extension SettingsViewController
                 self.navigationController?.pushViewController(vc, animated: true)
                 self.tableView.deselectRow(at: indexPath, animated: true)
                 
-            case .resetPairingFile:
-                
-                let filename = "ALTPairingFile.mobiledevicepairing"
-                
-                let fm = FileManager.default
-                
-                let documentsPath = fm.documentsDirectory.appendingPathComponent("/\(filename)")
-                let alertController = UIAlertController(
-                    title: NSLocalizedString("Are you sure to reset the pairing file?", comment: ""),
-                    message: NSLocalizedString("You can reset the pairing file when you cannot sideload apps or enable JIT. You need to restart SideStore.", comment: ""),
-                    preferredStyle: UIAlertController.Style.actionSheet)
-                
-                alertController.addAction(UIAlertAction(title: NSLocalizedString("Delete and Reset", comment: ""), style: .destructive){ _ in
-                    if fm.fileExists(atPath: documentsPath.path), let contents = try? String(contentsOf: documentsPath), !contents.isEmpty {
-                        UserDefaults.standard.isPairingReset = true
-                        try? fm.removeItem(atPath: documentsPath.path)
-                        NSLog("Pairing File Reseted")
-                    }
-                    self.tableView.deselectRow(at: indexPath, animated: true)
-                    let dialogMessage = UIAlertController(title: NSLocalizedString("Pairing File Reset", comment: ""), message: NSLocalizedString("Please restart SideStore", comment: ""), preferredStyle: .alert)
-                    self.present(dialogMessage, animated: true, completion: nil)
-                })
-                alertController.addAction(.cancel)
-                //Fix crash on iPad
-                alertController.popoverPresentationController?.sourceView = self.tableView
-                alertController.popoverPresentationController?.sourceRect = self.tableView.rectForRow(at: indexPath)
-                self.present(alertController, animated: true)
+            case .pairingFileManagement:
+                let pairingView = PairingFileManagementView()
+                let vc = UIHostingController(rootView: pairingView)
+                #if !os(tvOS)
+                let appearance = UINavigationBarAppearance()
+                appearance.configureWithDefaultBackground()
+                vc.navigationItem.scrollEdgeAppearance = appearance
+                vc.navigationItem.standardAppearance = appearance
+                #endif
+                self.navigationController?.pushViewController(vc, animated: true)
                 self.tableView.deselectRow(at: indexPath, animated: true)
                 
             case .anisetteServers:
@@ -1330,10 +1318,22 @@ extension SettingsViewController
 
                 navigationController?.pushViewController(vc, animated: true)
 
+            case .networkDiscovery:
+                let discoveryView = BonjourDiscoveryView()
+                let vc = UIHostingController(rootView: discoveryView)
+                vc.view.backgroundColor = .settingsBackground
+                vc.title = NSLocalizedString("Network Discovery", comment: "")
+                self.prepare(for: UIStoryboardSegue(identifier: "diagnostics", source: self, destination: vc), sender: nil)
+
             case .developerServices:
                 let developerServicesView = DeveloperServicesView(presentingViewController: self)
                 let vc = UIHostingController(rootView: developerServicesView)
                 self.prepare(for: UIStoryboardSegue(identifier: "developerServices", source: self, destination: vc), sender: nil)
+
+            case .profileManagement:
+                let profileManagementView = ProfileManagementView(presentingViewController: self)
+                let vc = UIHostingController(rootView: profileManagementView)
+                self.prepare(for: UIStoryboardSegue(identifier: "profileManagement", source: self, destination: vc), sender: nil)
 
             case .certificateManagement:
                 let certificateManagementView = CertificatesView(presentingViewController: self)

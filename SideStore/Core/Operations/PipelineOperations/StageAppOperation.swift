@@ -28,6 +28,10 @@ final class StageAppOperation: BasePipelineOperation<InstallAppOperationContext,
             self.context.targetAppBundle = ALTApplication(fileURL: installedApp.fileURL)
         }
         
+        if self.context.targetAppBundle == nil, let installedApp = self.context.installedApp {
+            self.context.targetAppBundle = ALTApplication(fileURL: installedApp.fileURL)
+        }
+        
         guard let appBundle = self.context.targetAppBundle else {
             throw OperationError.invalidParameters("StageAppOperation: context.appBundle is nil")
         }

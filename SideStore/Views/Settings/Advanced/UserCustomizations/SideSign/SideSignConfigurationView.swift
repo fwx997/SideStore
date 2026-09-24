@@ -116,7 +116,7 @@ class SideSignConfigurationViewModel: ObservableObject {
     }
 
     func reset() async {
-        let headers = await SideSignConfigManager.shared.resetToDefaults()
+        let headers = SideSignConfigManager.shared.resetToDefaults()
         applyHeadersToState(headers)
         updateRawEditableJSON()
         showToast(text: "Reset to default SideSign configuration.")

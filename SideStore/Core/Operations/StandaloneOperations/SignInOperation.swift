@@ -26,6 +26,8 @@ final class SignInOperation: BaseStandaloneOperation<StandaloneOperationContext,
     let anisetteServerHandler: AnisetteServerHandler
     let skipDeviceRegistration: Bool
     let skipCertificateProvisioning: Bool
+    let skipResign: Bool
+    let skipHowTos: Bool
     let certificateFlow: CertificateProvisioningFlow
     let deviceRegistrationFlow: DeviceRegistrationFlow
 
@@ -34,12 +36,16 @@ final class SignInOperation: BaseStandaloneOperation<StandaloneOperationContext,
         signInHandler: SignInHandler,
         anisetteServerHandler: AnisetteServerHandler,
         skipDeviceRegistration: Bool = false,
-        skipCertificateProvisioning: Bool = false
+        skipCertificateProvisioning: Bool = false,
+        skipResign: Bool = false,
+        skipHowTos: Bool = false
     ) throws {
         self.signInHandler = signInHandler
         self.anisetteServerHandler = anisetteServerHandler
         self.skipDeviceRegistration = skipDeviceRegistration
         self.skipCertificateProvisioning = skipCertificateProvisioning
+        self.skipResign = skipResign
+        self.skipHowTos = skipHowTos
         self.certificateFlow = CertificateProvisioningFlow(
             handler: signInHandler,
             skipCertificateProvisioning: skipCertificateProvisioning
@@ -51,6 +57,8 @@ final class SignInOperation: BaseStandaloneOperation<StandaloneOperationContext,
         [SignInOperation] Initialized with options:
           • skipDeviceRegistration: \(skipDeviceRegistration)
           • skipCertificateProvisioning: \(skipCertificateProvisioning)
+          • skipResign: \(skipResign)
+          • skipHowTos: \(skipHowTos)
         """)
     }
 
@@ -218,23 +226,25 @@ final class SignInOperation: BaseStandaloneOperation<StandaloneOperationContext,
 
                 self.verboseLog("[SignInOperation] finalizeAuthentication: Authentication Success for team \(team.identifier) account.")
                 
-                if let signingCertificate = certificate,
+                var didResign = false
+                if !self.skipResign,
+                   let signingCertificate = certificate,
                    !self.skipCertificateProvisioning,
                    UserDefaults.standard.isDeviceRegistered
                 {
                     let resignFlow = CodeSignValidationFlow(handler: self.signInHandler)
-                    let didResign = try await resignFlow.validateAndResignIfNeeded(
+                    didResign = try await resignFlow.validateAndResignIfNeeded(
                         team: team,
                         certificate: signingCertificate,
                         portalCertificates: self.certificateFlow.portalCertificates,
                         context: self.context
                     )
                     self.verboseLog("[SignInOperation] finalizeAuthentication: didResign = \(didResign)")
-                    
-                    if !didResign && self.requiresPostAuthFlow {
-                        await self.signInHandler.resolvePostAuth()
-                        self.verboseLog("[SignInOperation] finalizeAuthentication: post auth flow completed...")
-                    }
+                }
+                
+                if !self.skipHowTos && !didResign && self.requiresPostAuthFlow {
+                    await self.signInHandler.resolvePostAuth()
+                    self.verboseLog("[SignInOperation] finalizeAuthentication: post auth flow completed...")
                 }
                 
                 await self.signInHandler.complete()

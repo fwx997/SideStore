@@ -100,7 +100,7 @@ struct BundleResourceBrowserView: View {
         }
         #if !os(tvOS)
         .sheet(isPresented: $showingShareSheet) {
-            ActivityView(items: Array(selectedURLs))
+            ActivityViewController(items: Array(selectedURLs))
         }
         #endif
         .onAppear {
@@ -370,7 +370,7 @@ struct IPAContentsView: View {
                 VStack(spacing: 16) {
                     ProgressView()
                         .scaleEffect(1.5)
-                    Text("Extracting \(ipaURL.lastPathComponent)\u{2026}")
+                    Text("Extracting \(ipaURL.lastPathComponent)...")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
@@ -414,7 +414,7 @@ struct FullAppBundleView: View {
         try? InfoPlistParser(bundleURL: bundleURL)
     }
 
-    private var infoPlist: [String: Any]? {
+    private var infoPlist: [String: any Sendable]? {
         infoPlistParser?.rawDictionary
     }
 
@@ -565,12 +565,11 @@ struct FullAppBundleView: View {
     }
 }
 
-// MARK: - Plist Resource Viewer (auto-routes to InfoPlistContainerView or raw text)
-
+// MARK: - Plist Resource Viewer 
 struct PlistResourceViewer: View {
     let url: URL
 
-    @State private var plistDict: [String: Any]? = nil
+    @State private var plistDict: [String: any Sendable]? = nil
     @State private var rawText: String = ""
     @State private var isLoaded = false
 
@@ -580,7 +579,7 @@ struct PlistResourceViewer: View {
                 InfoPlistContainerView(plist: dict, title: url.lastPathComponent)
             } else {
                 ScrollView {
-                    Text(rawText.isEmpty ? "Loading\u{2026}" : rawText)
+                    Text(rawText.isEmpty ? "Loading..." : rawText)
                         .font(.system(size: 12, design: .monospaced))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding()
@@ -652,7 +651,7 @@ struct ResourceTextViewer: View {
 
     var body: some View {
         ScrollView {
-            Text(content.isEmpty ? "Loading\u{2026}" : content)
+            Text(content.isEmpty ? "Loading..." : content)
                 .font(.system(size: 12, design: .monospaced))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()

@@ -57,14 +57,14 @@ final class VerifyCertificateOperation: BasePipelineOperation<InstallAppOperatio
             if !willResign {
                 debugLog("[VerifyCertificateOperation] Running in verification-only mode (!willResign) for '\(appName)'...")
                 
-                guard let appBundle = self.context.targetAppBundle else {
-                    throw OperationError.invalidParameters("VerifyCertificateOperation: targetAppBundle is missing in context.")
+                guard let installedApp = self.context.installedApp else {
+                    throw OperationError.invalidParameters("VerifyCertificateOperation: installedApp is missing in context.")
                 }
-                guard let binaryCert = CertificateManager.shared.getSigningCertificate(at: appBundle.fileURL) else {
+                guard let lastSigningCert = CertificateManager.shared.getSigningCertificate(for: installedApp) else {
                     throw OperationError.invalidParameters("Could not locate signing certificate for '\(appName)'.")
                 }
                 
-                let result = await validateCertificate(binaryCert, portalCertificateSerials: portalCertificateSerials, signingCertificateSerial: signingCertificateSerial)
+                let result = await validateCertificate(lastSigningCert, portalCertificateSerials: portalCertificateSerials, signingCertificateSerial: signingCertificateSerial)
                 finalStatus = result
                 self.context.targetCertStatus = result
                 try processValidationResult(result, description: "Target bundle binary certificate", appName: appName, team: team)
