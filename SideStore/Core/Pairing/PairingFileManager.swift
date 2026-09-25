@@ -158,18 +158,6 @@ final class PairingFileManager: NSObject {
         return nil
     }
 
-    nonisolated func fetchPairingFile(preferred: PairingProtocol? = nil) -> String? {
-        guard !UserDefaults.standard.isPairingReset else { return nil }
-        let targetPreferred = preferred ?? preferredProtocol
-        if let targetPreferred, let contents = fetchPairingFile(for: targetPreferred) {
-            return contents
-        }
-        if let persisted = persistedActiveProtocol {
-            return fetchPairingFile(for: persisted)
-        }
-        return nil
-    }
-    
     @discardableResult
     nonisolated func parse(content: String, preferred: PairingProtocol? = nil) throws -> any PairingFile {
         try PairingFileParser.parse(content: content, preferred: preferred)
