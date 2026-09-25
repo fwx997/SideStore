@@ -129,6 +129,8 @@ public final class AppBootManager {
         async let minimuxerCheck: Void = {
             debugLog("[AppBootManager] performBootSequence(): Minimuxer check starting")
             defer { debugLog("[AppBootManager] performBootSequence(): Minimuxer check completed") }
+            // zh-patch: 先收养外部工具 (idevice pair "Send to an app") 写入的旧命名配对文件
+            PairingFileManager.shared.adoptLegacyPairingFileIfNeeded()
             guard let pf = PairingFileManager.shared.fetchPairingFile() else {
                 #if !targetEnvironment(simulator)
                 self.needsPairingPrompt = true

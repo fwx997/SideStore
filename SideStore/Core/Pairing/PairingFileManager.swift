@@ -158,6 +158,39 @@ final class PairingFileManager: NSObject {
         return nil
     }
 
+    // zh-patch: 兼容外部工具 (idevice pair "Send to an app") 直接写入 Documents 的旧命名
+    // 配对文件 ALTPairingFile.mobiledevicepairing。上游重构后运行时只认新命名双文件,
+    // 旧命名仅在一次性维护迁移里被消费 (之后删除), 外部工具再写入的文件无人读取,
+    // 只能手动导入。这里在启动时自动收养: 旧文件内容解析出协议 → 落盘到新命名 →
+    // 激活该协议 → 删除旧文件, 恢复"发送到应用 + 重启即生效"的旧使用方式。
+    nonisolated func adoptLegacyPairingFileIfNeeded() {
+        let fm = FileManager.default
+        let legacyURL = fm.documentsDirectory.appendingPathComponent(AppConstants.Pairing.legacyPairingFileName)
+        guard fm.fileExists(atPath: legacyURL.path),
+              let content = try? String(contentsOf: legacyURL), !content.isEmpty,
+              let parsed = try? parse(content: content, preferred: nil)
+        else { return }
+        let targetURL = pairingFileURL(for: parsed.mode)
+        if fm.fileExists(atPath: targetURL.path) {
+            // 仅当旧文件比目标新时才覆盖 (外部工具重发的新信任不能被旧文件遮蔽)
+            let legacyMtime = ((try? fm.attributesOfItem(atPath: legacyURL.path))?[.modificationDate] as? Date) ?? .distantPast
+            let targetMtime = ((try? fm.attributesOfItem(atPath: targetURL.path))?[.modificationDate] as? Date) ?? .distantPast
+            guard legacyMtime > targetMtime else { return }
+        }
+        do {
+            try content.write(to: targetURL, atomically: true, encoding: .utf8)
+        } catch {
+            debugLog("[PairingFile] zh-patch: failed to adopt legacy pairing file: \(error)")
+            return
+        }
+        debugLog("[PairingFile] zh-patch: adopted legacy pairing file -> \(targetURL.lastPathComponent) (mode=\(parsed.mode.rawValue))")
+        persistedActiveProtocol = parsed.mode
+        if UserDefaults.standard.isPairingReset {
+            UserDefaults.standard.isPairingReset = false
+        }
+        try? fm.removeItem(at: legacyURL)
+    }
+
     @discardableResult
     nonisolated func parse(content: String, preferred: PairingProtocol? = nil) throws -> any PairingFile {
         try PairingFileParser.parse(content: content, preferred: preferred)
