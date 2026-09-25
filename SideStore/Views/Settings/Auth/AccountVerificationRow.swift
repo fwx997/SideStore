@@ -212,7 +212,8 @@ extension AccountVerificationRow {
             : String(format: NSLocalizedString("%d Pending Actions", comment: ""), count)
         
         let bulletList = pendingItems.map { "• \($0)" }.joined(separator: "\n")
-        let message = NSLocalizedString("The following action(s) from sign-in are required to complete account setup:\n\n\(bulletList)", comment: "")
+        // zh-patch: 插值进 NSLocalizedString 键会变成动态字符串, strings 文件无法匹配; 改为 format 参数
+        let message = String(format: NSLocalizedString("The following action(s) from sign-in are required to complete account setup:\n\n%@", comment: ""), bulletList)
         
         let confirmed = await withCheckedContinuation { continuation in
             let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
