@@ -413,12 +413,15 @@ private extension FetchProvisioningProfilesOperation{
     }
 
     func adjustedGroupIdentifier(for groupIdentifier: String, appID: ALTAppID, targetAppBundle: ALTApplication, team: ALTTeam) async throws -> String {
-        // Currently Build.xconfig for debug appends suffix as TEAMID already
-        #if DEBUG
-        if groupIdentifier.contains(Bundle.baseAltStoreAppGroupID) && groupIdentifier.contains(team.identifier) {
-            return groupIdentifier
+        // zh-patch: Signed entitlement caches already contain the team suffix. Collapse
+        // repeated suffixes so LiveContainer companions keep the original shared group.
+        // needs proper testing: restoring LC2 access after a cached, duplicated suffix.
+        let teamSuffix = "." + team.identifier
+        var baseGroupIdentifier = groupIdentifier
+        while baseGroupIdentifier.hasSuffix(teamSuffix) {
+            baseGroupIdentifier.removeLast(teamSuffix.count)
         }
-        #endif
+        let signedGroupIdentifier = baseGroupIdentifier + teamSuffix
 
         let rawGroupID = groupIdentifier.hasPrefix("group.") ? String(groupIdentifier.dropFirst("group.".count)) : groupIdentifier
         let targetBundleID = targetAppBundle.bundleIdentifier
@@ -430,7 +433,7 @@ private extension FetchProvisioningProfilesOperation{
 
         if matchesBundleID && !isExactCaseMatch {
             let correctedGroup = "group." + appID.bundleIdentifier
-            let originalGroupWithTeam = groupIdentifier + "." + team.identifier
+            let originalGroupWithTeam = signedGroupIdentifier
             
             if UserDefaults.standard.autoFixAppGroupIDs {
                 return correctedGroup
@@ -448,7 +451,7 @@ private extension FetchProvisioningProfilesOperation{
             }
         }
 
-        return groupIdentifier + "." + team.identifier
+        return signedGroupIdentifier
     }
 }
 

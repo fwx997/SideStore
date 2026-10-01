@@ -65,6 +65,11 @@ jobs:
         with:
           xcode-version: "26.2"
 
+      - name: Test App Group signing
+        run: |
+          swiftc --version
+          python3 -m unittest discover -s scripts/tests -p test_app_group_signing.py -v
+
       - name: Restore Cache (exact)
         id: xcode-cache-exact
         uses: actions/cache/restore@v3

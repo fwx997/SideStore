@@ -62,9 +62,9 @@ final class DownloadAppOperation: BasePipelineOperation<InstallAppOperationConte
         
 
         // zh-patch v3b: SideStore/LC 自重签时, 使用"正在运行的 LC 本体"作为输入包。
-        // 注意: 绝不能使用 InstalledApp.fileURL (AppGroup 缓存目录里的 App.app) ——
-        // 那里缓存的是首次安装时的旧官方英文包, 会导致重签后变回英文!
-        do {
+        // 仅限下载目标为自身; 普通应用必须继续下载其来源包。
+        // needs proper testing: 真机回归自身重签与普通应用安装。
+        if self.bundleIdentifier == StoreApp.altstoreAppID {
             var candidates: [URL] = []
             let mainURL = Bundle.main.bundleURL
             if mainURL.lastPathComponent == "SideStoreApp.framework" {
