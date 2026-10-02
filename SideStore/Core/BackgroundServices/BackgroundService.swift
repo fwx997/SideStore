@@ -27,23 +27,27 @@ public enum BackgroundServiceMode: String, CaseIterable, Sendable {
     public var displayName: String {
         switch self {
         case .audio:
-            return "Audio"
+            return NSLocalizedString("Audio", comment: "Background keepalive mode")
         case .location:
-            return "Location"
+            return NSLocalizedString("Location", comment: "Background keepalive mode")
         }
     }
 
     public var subtitle: String {
         switch self {
         case .audio:
-            return "Silent keepalive background audio loop"
+            return NSLocalizedString("Silent audio while tasks are running", comment: "Background keepalive mode description")
         case .location:
-            return "Low-power keepalive background location"
+            return NSLocalizedString("Location updates while tasks are running", comment: "Background keepalive mode description")
         }
     }
 }
 
-public final class BackgroundServiceManager: @unchecked Sendable {
+@MainActor
+public final class BackgroundServiceManager {
+    private static var activeTasks: Set<UUID> = []
+    private static var isSuspended = false
+
     public static var shared: any BackgroundService {
         service(for: UserDefaults.standard.backgroundServiceMode)
     }
@@ -58,30 +62,44 @@ public final class BackgroundServiceManager: @unchecked Sendable {
     }
 
     public static func stop() {
+        // Self-reinstallation must stay suspended until the current tasks finish.
+        isSuspended = true
         shared.stop()
+    }
+
+    public static func beginTask() -> UUID {
+        if activeTasks.isEmpty {
+            isSuspended = false
+        }
+        let identifier = UUID()
+        activeTasks.insert(identifier)
+        ensureBackgroundServicesStarted()
+        return identifier
+    }
+
+    public static func endTask(_ identifier: UUID) {
+        guard activeTasks.remove(identifier) != nil else { return }
+        guard activeTasks.isEmpty else { return }
+        shared.stop()
+        isSuspended = false
     }
 
     public static func switchTo(mode: BackgroundServiceMode) {
         shared.stop()
         UserDefaults.standard.backgroundServiceMode = mode
-        if UserDefaults.standard.isBackgroundServiceEnabled {
-            service(for: mode).start()
-        }
+        ensureBackgroundServicesStarted()
     }
 
     public static func setEnabled(_ enabled: Bool) {
         UserDefaults.standard.isBackgroundServiceEnabled = enabled
-        if enabled {
-            _ = ensureBackgroundServicesStarted()
-        } else {
-            stop()
-        }
+        ensureBackgroundServicesStarted()
     }
 
     @discardableResult
     public static func ensureBackgroundServicesStarted() -> Bool {
-        guard UserDefaults.standard.isBackgroundServiceEnabled else {
-            stop()
+        guard !activeTasks.isEmpty, !isSuspended,
+              UserDefaults.standard.isBackgroundServiceEnabled else {
+            shared.stop()
             return false
         }
         if !shared.isRunning {

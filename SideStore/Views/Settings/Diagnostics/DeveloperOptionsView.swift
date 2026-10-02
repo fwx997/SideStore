@@ -871,10 +871,11 @@ struct DeveloperOptionsView: View {
         let started = BackgroundServiceManager.ensureBackgroundServicesStarted()
         let modeName = UserDefaults.standard.backgroundServiceMode.displayName
         if started {
-            let toastView = ToastView(text: NSLocalizedString("Started Background Service", comment: ""), detailText: "\(modeName) keepalive is running.")
+            let detail = String(format: NSLocalizedString("%@ keepalive is running until all tasks finish.", comment: ""), modeName)
+            let toastView = ToastView(text: NSLocalizedString("Started Background Service", comment: ""), detailText: detail)
             toastView.show(in: top)
         } else {
-            let toastView = ToastView(text: NSLocalizedString("Background Service Disabled", comment: ""), detailText: "Enable background service in User Customizations.")
+            let toastView = ToastView(text: NSLocalizedString("Background Service Idle", comment: ""), detailText: NSLocalizedString("Keepalive only runs during active tasks when enabled in User Customizations.", comment: ""))
             toastView.show(in: top)
         }
     }
@@ -882,7 +883,7 @@ struct DeveloperOptionsView: View {
     private func triggerStopBackgroundService() {
         guard let top = UIApplication.shared.topViewController() else { return }
         BackgroundServiceManager.stop()
-        let toastView = ToastView(text: NSLocalizedString("Stopped Background Service", comment: ""), detailText: "Background keepalive service stopped.")
+        let toastView = ToastView(text: NSLocalizedString("Stopped Background Service", comment: ""), detailText: NSLocalizedString("Background keepalive service stopped.", comment: ""))
         toastView.show(in: top)
     }
     
@@ -911,7 +912,9 @@ struct DeveloperOptionsView: View {
         #endif
         do {
             if let rotatedURL = try WidgetLogManager.rotateLog() {
-                let toastView = ToastView(text: NSLocalizedString("Rotated \(logName) Log", comment: ""), detailText: "Saved to WidgetLogs/\(rotatedURL.lastPathComponent)")
+                let title = String(format: NSLocalizedString("Rotated %@ Log", comment: ""), logName)
+                let detail = String(format: NSLocalizedString("Saved to WidgetLogs/%@", comment: ""), rotatedURL.lastPathComponent)
+                let toastView = ToastView(text: title, detailText: detail)
                 toastView.show(in: top)
             } else {
                 let toastView = ToastView(text: NSLocalizedString("\(logName) Log Empty", comment: ""), detailText: "Nothing to rotate.")

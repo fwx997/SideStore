@@ -949,7 +949,7 @@ public struct InfoPlistCustomizationCoreView: View {
         HStack(spacing: 5) {
             Image(systemName: icon)
                 .font(.system(size: 11, weight: .semibold))
-            Text(title)
+            Text(LocalizedStringKey(title))
                 .font(.caption)
                 .fontWeight(.semibold)
         }

@@ -185,7 +185,7 @@ final class InstallAppOperation: BasePipelineOperation<InstallAppOperationContex
         
         // Self-reinstall background suspension
         if isSelfReinstall {
-            self.handleSelfReinstallation(for: installedApp)
+            await self.handleSelfReinstallation(for: installedApp)
         }
         
         // Phase 2: App installation
@@ -393,9 +393,9 @@ final class InstallAppOperation: BasePipelineOperation<InstallAppOperationContex
         await handler.suspendToHomeScreen()
     }
 
-    private func handleSelfReinstallation(for installedApp: InstalledApp) {
+    private func handleSelfReinstallation(for installedApp: InstalledApp) async {
         // Stop keepalive background services unconditionally so the process can suspend cleanly
-        BackgroundServiceManager.stop()
+        await BackgroundServiceManager.stop()
 
         // Reinstalling ourself will hang until we leave the app, so we need to exit it without force closing
         Task.detached {

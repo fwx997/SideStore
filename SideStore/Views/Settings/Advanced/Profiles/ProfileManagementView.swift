@@ -384,7 +384,7 @@ struct ProfileManagementView: View {
         guard let topVC = presentingViewController ?? UIApplication.shared.topViewController() else { return }
         TVWebFileTransferManager.shared.startImport(
             acceptedExtensions: ["mobileprovision"],
-            title: "Import Provisioning Profile",
+            title: NSLocalizedString("Import Provisioning Profile", comment: ""),
             presentingVC: topVC
         ) { fileURL in
             guard let fileURL = fileURL else { return }
@@ -402,7 +402,7 @@ struct ProfileManagementView: View {
         guard let topVC = presentingViewController ?? UIApplication.shared.topViewController() else { return }
         TVWebFileTransferManager.shared.startExport(
             fileURL: fileURL,
-            title: "Export Provisioning Profile",
+            title: NSLocalizedString("Export Provisioning Profile", comment: ""),
             presentingVC: topVC,
             completion: nil
         )

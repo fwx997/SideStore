@@ -250,7 +250,7 @@ class ImportExport {
         #else
         TVWebFileTransferManager.shared.startImport(
             acceptedExtensions: ["zip", "backup"],
-            title: "Import App Backup",
+            title: NSLocalizedString("Import App Backup", comment: ""),
             presentingVC: presentingViewController
         ) { selectedURL in
             handleSelectedURL(selectedURL)

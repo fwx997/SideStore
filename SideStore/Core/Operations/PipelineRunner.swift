@@ -105,6 +105,14 @@ final class PipelineRunner: Sendable
     {
         let operations = operations.filter { progress.progress(for: $0) == nil || progress.progress(for: $0)?.isCancelled == true }
         guard !operations.isEmpty else { throw OperationError.cancelled }
+
+        // zh-patch: one lease per pipeline, including failures and cancellation.
+        let keepaliveTask = await BackgroundServiceManager.beginTask()
+        defer {
+            Task { @MainActor in
+                BackgroundServiceManager.endTask(keepaliveTask)
+            }
+        }
         
         let backgroundTaskID = await MainActor.run {
             var taskID = UIBackgroundTaskIdentifier.invalid

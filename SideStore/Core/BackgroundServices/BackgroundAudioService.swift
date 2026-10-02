@@ -24,7 +24,7 @@ public final class BackgroundAudioService: BackgroundService, @unchecked Sendabl
         interruptionObserver = NotificationCenter.default.addObserver(
             forName: AVAudioSession.interruptionNotification,
             object: nil,
-            queue: nil
+            queue: .main
         ) { [weak self] notification in
             self?.handleInterruption(notification: notification)
         }
@@ -59,6 +59,9 @@ public final class BackgroundAudioService: BackgroundService, @unchecked Sendabl
             player?.play()
             return true
         } catch {
+            player?.stop()
+            player = nil
+            try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
             print("BackgroundAudioService start failed: \(error)")
             return false
         }
@@ -68,8 +71,14 @@ public final class BackgroundAudioService: BackgroundService, @unchecked Sendabl
         lock.lock()
         defer { lock.unlock() }
 
-        player?.stop()
-        player = nil
+        guard let player else { return }
+        player.stop()
+        self.player = nil
+        do {
+            try AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+        } catch {
+            print("BackgroundAudioService could not deactivate audio session: \(error)")
+        }
     }
 
     public func prepare() async -> Bool {
