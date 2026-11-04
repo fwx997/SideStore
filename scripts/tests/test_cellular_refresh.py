@@ -78,6 +78,7 @@ final class Fixture: @unchecked Sendable {
     }
 }
 
+@available(macOS 13.0, *)
 @main
 struct CellularRegression {
     static func expect(_ expected: CellularRefreshError, _ operation: () async throws -> Void) async {
@@ -92,6 +93,7 @@ struct CellularRegression {
         try await concurrentOperations()
         try await recoveryAndStaleCallbacks()
         try await deadlineResults()
+        try await sessionResults()
         print("Cellular restoration and background deadline regressions passed")
     }
 
@@ -233,6 +235,69 @@ struct CellularRegression {
         let task = Task { try await cancelled.wait(timeout: 1, onTimeout: {}) }
         task.cancel()
         do { try await task.value; preconditionFailure("Expected cancellation") }
+        catch is CancellationError { }
+        cancelled.finish(.success(()))
+    }
+
+    static func sessionResults() async throws {
+        let completed = BackgroundRefreshSession(deadline: .now + .seconds(1))
+        try completed.dispatch { completed.finish(.success(())) }
+        completed.finish(.failure(Failure.operation))
+        try await completed.wait()
+
+        let failed = BackgroundRefreshSession(deadline: .now + .seconds(1))
+        do { try failed.dispatch { throw Failure.operation }; preconditionFailure("Expected factory failure") }
+        catch Failure.operation { }
+        do { try await failed.wait(); preconditionFailure("Expected saved failure") }
+        catch Failure.operation { }
+
+        try await startupDeadline()
+        try await dispatchedDeadline()
+        try await cancelledSession()
+    }
+
+    static func startupDeadline() async throws {
+        let expired = BackgroundRefreshSession(deadline: .now - .seconds(1))
+        do { try expired.dispatch { preconditionFailure("Late startup dispatched a refresh") } }
+        catch BackgroundRefreshPendingError.notStarted { }
+        do { try await expired.wait(); preconditionFailure("Must not claim a refresh started") }
+        catch BackgroundRefreshPendingError.notStarted { }
+
+        let preparing = BackgroundRefreshSession(deadline: .now + .milliseconds(20))
+        do { try await preparing.wait(); preconditionFailure("Startup must be bounded") }
+        catch BackgroundRefreshPendingError.notStarted { }
+        do { try preparing.checkCanContinue(); preconditionFailure("Late database startup continued") }
+        catch BackgroundRefreshPendingError.notStarted { }
+        do { try preparing.dispatch { preconditionFailure("Expired startup dispatched work") } }
+        catch BackgroundRefreshPendingError.notStarted { }
+    }
+
+    static func dispatchedDeadline() async throws {
+        let pending = BackgroundRefreshSession(deadline: .now + .milliseconds(20))
+        let operationFinished = BackgroundRefreshWaiter()
+        try pending.dispatch {
+            Task {
+                try await Task.sleep(nanoseconds: 80_000_000)
+                pending.finish(.success(()))
+                operationFinished.finish(.success(()))
+            }
+        }
+        do { try await pending.wait(); preconditionFailure("Must not report success before completion") }
+        catch BackgroundRefreshPendingError.stillRunning { }
+        try await operationFinished.wait(timeout: 1, onTimeout: {})
+        do { try await pending.wait(); preconditionFailure("Late result changed the timeout outcome") }
+        catch BackgroundRefreshPendingError.stillRunning { }
+    }
+
+    static func cancelledSession() async throws {
+        let cancelled = BackgroundRefreshSession(deadline: .now + .seconds(1))
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            try await cancelled.wait()
+        }
+        do { try await task.value; preconditionFailure("Expected cancellation") }
+        catch is CancellationError { }
+        do { try cancelled.dispatch { preconditionFailure("Cancelled session dispatched work") } }
         catch is CancellationError { }
         cancelled.finish(.success(()))
     }

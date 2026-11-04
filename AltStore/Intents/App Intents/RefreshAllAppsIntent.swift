@@ -124,10 +124,17 @@ struct RefreshAllAppsIntent: AppIntent, CustomIntentMigratedAppIntent, Predictab
     
     func perform() async throws -> some IntentResult & ProvidesDialog
     {
+        let session = BackgroundRefreshSession(deadline: .now + .seconds(27))
+        // Do not await this worker on exit: shared database initialization may outlive
+        // cancellation. Session checks prevent that late initialization from starting work.
+        let preparation = Task {
+            do { try await self.refreshAllApps(session: session) }
+            catch { session.finish(.failure(error)) }
+        }
+        defer { preparation.cancel() }
         do
         {
-            try await CellularRefreshManager.shared.checkBackgroundRefreshAllowed()
-            try await self.refreshAllApps()
+            try await session.wait()
             
             return .result(dialog: "All apps have been refreshed.")
         }
@@ -142,25 +149,32 @@ struct RefreshAllAppsIntent: AppIntent, CustomIntentMigratedAppIntent, Predictab
 @available(iOS 17.0, tvOS 17.0, *)
 private extension RefreshAllAppsIntent
 {
-    func refreshAllApps() async throws
+    func refreshAllApps(session: BackgroundRefreshSession) async throws
     {
+        try session.checkCanContinue()
+        try await CellularRefreshManager.shared.checkBackgroundRefreshAllowed()
+        try session.checkCanContinue()
         try await DatabaseManager.shared.start()
+        try session.checkCanContinue()
         
         let context = DatabaseManager.shared.persistentContainer.newBackgroundContext()
         let installedApps = await context.perform { InstalledApp.fetchAppsForRefreshingAll(in: context) }
-        
-        let waiter = BackgroundRefreshWaiter()
-        let operation = try AppManager.shared.backgroundRefresh(
-            // Enable completion notifications before dispatch, including a result racing the deadline.
-            installedApps, presentsNotifications: true,
-            ignoresServerNotFoundError: false
-        ) { result in
-            waiter.finish(Self.refreshResult(result))
+        try session.checkCanContinue()
+        guard !installedApps.isEmpty else {
+            session.finish(.success(()))
+            return
         }
-        self.progress.addChild(operation.progress, withPendingUnitCount: 1)
-        // Do not force foreground at the system shortcut deadline. Throwing the pending
-        // state also stops following shortcut actions from disconnecting the VPN too soon.
-        try await waiter.wait(timeout: 27, onTimeout: {})
+
+        try session.dispatch {
+            let operation = try AppManager.shared.backgroundRefresh(
+                // Enable final notifications before dispatch, including a result racing the deadline.
+                installedApps, presentsNotifications: true,
+                ignoresServerNotFoundError: false
+            ) { result in
+                session.finish(Self.refreshResult(result))
+            }
+            self.progress.addChild(operation.progress, withPendingUnitCount: 1)
+        }
     }
 
     static func refreshResult(_ result: Result<[String: Result<InstalledApp, Error>], Error>) -> Result<Void, Error> {

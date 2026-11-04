@@ -1919,3 +1919,4 @@
 "Keep the app open for cellular refresh. Use Wi-Fi for background refresh." = "蜂窝续签时请保持应用在前台；后台自动续签请使用 Wi-Fi。";
 "Refresh is still running in the background. Keep the VPN connected and check the final notification. Refresh has not been confirmed yet." = "续签仍在后台执行，尚未确认完成。请保持 VPN 连接，并以最终通知为准。";
 "The current network could not be confirmed. Keep the app open, check the VPN, and try again." = "无法确认当前网络状态。请保持应用在前台，检查 VPN 后重试。";
+"Refresh could not start before the shortcut timed out. No refresh was started. Keep the VPN connected and try again." = "快捷指令等待超时，续签尚未启动。请保持 VPN 连接后重试。";
