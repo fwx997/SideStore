@@ -24,6 +24,15 @@ permissions:
   contents: read
 
 jobs:
+  regressions:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run production Swift regression tests
+        run: |
+          swiftc --version
+          python3 -m unittest discover -s scripts/tests -v
   package:
     runs-on: ${{ inputs.runner || 'macos-15-intel' }}
     timeout-minutes: 90
