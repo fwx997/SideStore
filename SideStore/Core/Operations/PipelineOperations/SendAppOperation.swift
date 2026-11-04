@@ -32,7 +32,7 @@ final class SendAppOperation: BasePipelineOperation<InstallAppOperationContext, 
         verboseLog("[SendAppOperation] AFC App Bundle `fileURL`: \(appURL.absoluteString)")
 
         do {
-            await CellularRefreshManager.shared.turnOffDataIfNeeded()
+            try await CellularRefreshManager.shared.turnOffDataIfNeeded()
             
             if UserDefaults.standard.preferResignedIPA, let ipaURL = self.context.ipaURL {
                 debugLog("[SendAppOperation] Sending IPA at \(ipaURL.path) via AFC...")
@@ -44,13 +44,14 @@ final class SendAppOperation: BasePipelineOperation<InstallAppOperationContext, 
             }
             self.setProgress(100)
         } catch {
-            await CellularRefreshManager.shared.turnOnDataIfNeeded()
+            try? await CellularRefreshManager.shared.turnOnDataIfNeeded()
+            if error is CellularRefreshError || error is CancellationError { throw error }
 
             // zh-patch: AFC 连接经 LocalDevVPN 隧道偶发瞬断 (Broken pipe)。
             // 2 秒后自动重试一次; 重试仍失败才抛错 (按上游约定保留原始错误, 不再掩盖)
             debugLog("[SendAppOperation] zh-patch: send failed (\(error)), retrying once in 2s...")
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            await CellularRefreshManager.shared.turnOffDataIfNeeded()
+            try await Task.sleep(nanoseconds: 2_000_000_000)
+            try await CellularRefreshManager.shared.turnOffDataIfNeeded()
 
             do
             {

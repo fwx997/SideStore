@@ -37,7 +37,9 @@ final class EnableJITOperation: BaseStandaloneOperation<StandaloneOperationConte
         try await super.executePreconditionCheck(parentProgress: parentProgress)
         self.setProgress(10)
 
-        try await self.enableJIT(for: self.installedApp)
+        try await CellularRefreshManager.shared.withRestorationScope {
+            try await self.enableJIT(for: self.installedApp)
+        }
         self.setProgress(100)
         return true
     }
@@ -92,13 +94,14 @@ final class EnableJITOperation: BaseStandaloneOperation<StandaloneOperationConte
                 let percent = 30 + Int64(Double(retry) / Double(maxRetries) * 60.0)
                 self.setProgress(percent)
                 do {
-                    await CellularRefreshManager.shared.turnOffDataIfNeeded()
+                    try await CellularRefreshManager.shared.turnOffDataIfNeeded()
                     try await safeDebugApp(targetBundleId)
-                    await CellularRefreshManager.shared.turnOnDataIfNeeded()
+                    try await CellularRefreshManager.shared.turnOnDataIfNeeded()
                     await notifyJITSuccess(appName: appName)
                     return
                 } catch {
-                    await CellularRefreshManager.shared.turnOnDataIfNeeded()
+                    try? await CellularRefreshManager.shared.turnOnDataIfNeeded()
+                    if error is CellularRefreshError || error is CancellationError { throw error }
                     lastError = error
                 }
             }
@@ -134,14 +137,11 @@ func notifyJITSuccess(appName: String) async {
 
 @available(iOS 17, *)
 func enableJITSideJITServer(serverURL: URL, bundleIdentifier: String, appName: String) async throws {
-    let udid: String
-    do {
-        await CellularRefreshManager.shared.turnOffDataIfNeeded()
-        udid = try await safeFetchUDID()
-        await CellularRefreshManager.shared.turnOnDataIfNeeded()
-    } catch {
-        await CellularRefreshManager.shared.turnOnDataIfNeeded()
-        throw error
+    let udid = try await CellularRefreshManager.shared.withRestorationScope {
+        try await CellularRefreshManager.shared.turnOffDataIfNeeded()
+        let result = try await safeFetchUDID()
+        try await CellularRefreshManager.shared.turnOnDataIfNeeded()
+        return result
     }
 
     let serverURLWithUDID = serverURL.appendingPathComponent(udid)

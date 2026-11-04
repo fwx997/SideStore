@@ -1904,3 +1904,18 @@
 "Recognized Services (%lld)" = "已识别的服务（%lld）";
 "Other / Raw Services (%lld)" = "其他／原始服务（%lld）";
 "Saved to WidgetLogs/%@" = "已保存到 WidgetLogs/%@";
+
+/* Confirmed cellular shortcut completion and unattended refresh status. */
+"Cellular refresh requires the app to be open and the device unlocked. Open the app and refresh again, or use Wi-Fi for background refresh." = "蜂窝续签需要解锁设备并保持应用在前台。请打开应用重新续签；后台自动续签请使用 Wi-Fi。";
+"Another cellular operation is still running. Wait for it to finish and try again." = "另一个蜂窝操作尚未完成，请稍后重试。";
+"Could not open the shortcut '%@'. Check its name and run the refresh from the open app." = "无法打开快捷指令“%@”。请检查指令名称，并在应用前台执行续签。";
+"The shortcut '%@' reported an error. Check its actions in Shortcuts." = "快捷指令“%@”执行出错，请在“快捷指令”中检查其操作。";
+"The shortcut '%@' was cancelled." = "快捷指令“%@”已取消。";
+"The shortcut '%@' did not confirm completion. Return to the app and try again." = "未收到快捷指令“%@”的完成确认。请返回应用后重试。";
+"The local device connection is not ready after turning off cellular data. Check the VPN and pairing file, then try again." = "关闭蜂窝数据后，本机设备连接仍未就绪。请检查 VPN 和配对文件后重试。";
+"Cellular data restoration could not be confirmed. Use Restore Cellular Data in the app's settings, or turn cellular data on manually. The pending recovery has been saved." = "无法确认蜂窝数据已恢复。请在应用设置中点击“恢复蜂窝数据”，或手动打开蜂窝数据。待恢复状态已保存。";
+"Cellular Data Needs Attention" = "请检查蜂窝数据";
+"Restore Cellular Data" = "恢复蜂窝数据";
+"Keep the app open for cellular refresh. Use Wi-Fi for background refresh." = "蜂窝续签时请保持应用在前台；后台自动续签请使用 Wi-Fi。";
+"Refresh is still running in the background. Keep the VPN connected and check the final notification. Refresh has not been confirmed yet." = "续签仍在后台执行，尚未确认完成。请保持 VPN 连接，并以最终通知为准。";
+"The current network could not be confirmed. Keep the app open, check the VPN, and try again." = "无法确认当前网络状态。请保持应用在前台，检查 VPN 后重试。";

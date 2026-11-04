@@ -9,18 +9,33 @@
 import Foundation
 import UIKit
 import Minimuxer
+import Network
 
 public final class CellularRefreshManager: @unchecked Sendable {
     public static let shared = CellularRefreshManager()
 
-    private let lock = NSLock()
-    private var cachedDidTurnOffData = false
-    private var didTurnOffData: Bool {
-        get { lock.withLock { cachedDidTurnOffData } }
-        set { lock.withLock { cachedDidTurnOffData = newValue } }
-    }
+    private static let pendingRestoreKey = "zh.cellularRefresh.pendingRestoreID"
+    private var coordinator: CellularRefreshCoordinator!
 
-    private init() {}
+    private init() {
+        coordinator = CellularRefreshCoordinator(environment: .init(
+            shouldPause: { [unowned self] in
+                guard self.isSupported && self.isEnabled else { return false }
+                return await CellularPathProbe.isAvailable(.wifi) != true
+            },
+            cellularAvailable: { await CellularPathProbe.isAvailable(.cellular) },
+            isForeground: { await Self.isAppForeground() },
+            openURL: { url in await Self.openShortcut(url) },
+            endpointReady: {
+                await minimuxer.network.refreshEndpoint()
+                if case .success(true) = await minimuxer.core.isReady(withNetworkCheck: false) { return true }
+                return false
+            },
+            pendingID: { UserDefaults.standard.string(forKey: Self.pendingRestoreKey) },
+            savePendingID: { UserDefaults.standard.set($0, forKey: Self.pendingRestoreKey) },
+            settings: { [unowned self] in self.shortcutSettings }
+        ))
+    }
 
     public var isSupported: Bool {
         #if os(tvOS)
@@ -86,31 +101,37 @@ public final class CellularRefreshManager: @unchecked Sendable {
     }
 
     @MainActor
-    private func openShortcut(url: URL) async -> Bool {
-        debugLog("[CellularRefreshManager] Opening shortcut URL: \(url.absoluteString)")
-        let success = await UIApplication.shared.open(url)
-        debugLog("[CellularRefreshManager] Shortcut URL open completed with success: \(success)")
-        return success
+    private static func isAppForeground() -> Bool {
+        UIApplication.shared.applicationState == .active &&
+        UIApplication.shared.connectedScenes.contains { $0.activationState == .foregroundActive }
     }
 
-    @discardableResult
-    private func turnOffData() async -> Bool {
-        let name = turnOffDataShortcutName
-        let url = shortcutURL(for: name, fallback: AppConstants.Shortcuts.defaultTurnOffDataShortcutName)
-        debugLog("[CellularRefreshManager] Executing TurnOffData shortcut '\(name)' (URL: \(url.absoluteString))...")
-        let success = await openShortcut(url: url)
-        debugLog("[CellularRefreshManager] TurnOffData shortcut finished execution.")
-        return success
+    @MainActor
+    private static func openShortcut(_ url: URL) async -> Bool {
+        guard isAppForeground() else { return false }
+        let accepted = await UIApplication.shared.open(url)
+        debugLog("[CellularRefreshManager] Shortcut launch accepted: \(accepted); waiting for its completion callback.")
+        return accepted
     }
 
-    @discardableResult
-    private func turnOnData() async -> Bool {
-        let name = turnOnDataShortcutName
-        let url = shortcutURL(for: name, fallback: AppConstants.Shortcuts.defaultTurnOnDataShortcutName)
-        debugLog("[CellularRefreshManager] Executing turnOnData shortcut '\(name)' (URL: \(url.absoluteString))...")
-        let success = await openShortcut(url: url)
-        debugLog("[CellularRefreshManager] turnOnData shortcut finished execution.")
-        return success
+    private var shortcutSettings: CellularRefreshCoordinator.Settings {
+        .init(offName: turnOffDataShortcutName, onName: turnOnDataShortcutName,
+              callbackScheme: Self.callbackScheme,
+              offDelay: turnOffDataBaseDelayOverride ?? AppConstants.Shortcuts.defaultTurnOffDataBaseDelay,
+              onDelay: turnOnDataBaseDelayOverride ?? AppConstants.Shortcuts.defaultTurnOnDataBaseDelay)
+    }
+
+    private static var callbackScheme: String {
+        // Read the physical host's plist, bypassing LiveContainer's active-bundle hooks.
+        var hostURL = Bundle.main.bundleURL
+        while hostURL.pathExtension != "app" && hostURL.path != "/" {
+            hostURL.deleteLastPathComponent()
+        }
+        let plist = NSDictionary(contentsOf: hostURL.appendingPathComponent("Info.plist"))
+        let types = plist?["CFBundleURLTypes"] as? [[String: Any]] ?? []
+        let schemes = types.flatMap { $0["CFBundleURLSchemes"] as? [String] ?? [] }
+        if let primary = schemes.first, primary != "sidestore" { return primary }
+        return schemes.first(where: { $0.hasPrefix("sidestore-") }) ?? "sidestore"
     }
 
     public var turnOffDataBaseDelayOverride: TimeInterval? {
@@ -150,59 +171,114 @@ public final class CellularRefreshManager: @unchecked Sendable {
         setTurnOnDataBaseDelayOverride(nil)
     }
 
-    private func sleep(baseDelay: TimeInterval, addOnDelay: TimeInterval = 0) async {
-        let totalDelay = baseDelay + addOnDelay
-        guard totalDelay > 0 else { return }
-        try? await Task.sleep(nanoseconds: UInt64(totalDelay * 1_000_000_000))
+    // zh-patch: Each pipeline owns its cellular cleanup, including failure and cancellation.
+    public func withRestorationScope<Value>(_ operation: () async throws -> Value) async throws -> Value {
+        try await coordinator.withRestorationScope(operation)
     }
 
-    private func waitForMinimuxerReady(timeout: TimeInterval) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        debugLog("[CellularRefreshManager] Waiting for minimuxer endpoint to become ready (timeout: \(timeout)s)...")
-        while Date() < deadline {
-            await minimuxer.network.refreshEndpoint()
-            if case .success(true) = await minimuxer.core.isReady(withNetworkCheck: false) {
-                debugLog("[CellularRefreshManager] Minimuxer is ready.")
-                return true
-            }
-            try? await Task.sleep(nanoseconds: 200_000_000)
-        }
-        debugLog("[CellularRefreshManager] Timed out waiting for minimuxer to become ready.")
-        return false
-    }
-
-    // public apis
     @discardableResult
-    public func turnOffDataIfNeeded(addOnDelay: TimeInterval = 0) async -> Bool {
-        guard isSupported && isEnabled else { return false }
-        guard !didTurnOffData else { return false }
+    public func turnOffDataIfNeeded(addOnDelay: TimeInterval = 0) async throws -> Bool {
+        try await coordinator.turnOffDataIfNeeded(addOnDelay: addOnDelay)
+    }
 
-        // If Wi-Fi is active, skip running cellular toggle shortcuts
-        guard !minimuxer.network.isWifiSatisfied else {
-            debugLog("[CellularRefreshManager] Wi-Fi is active, skipping turnOff shortcut.")
+    @discardableResult
+    public func turnOnDataIfNeeded(addOnDelay: TimeInterval = 0) async throws -> Bool {
+        try await coordinator.turnOnDataIfNeeded(addOnDelay: addOnDelay)
+    }
+
+    public func checkBackgroundRefreshAllowed() async throws {
+        guard isSupported, isEnabled else { return }
+        if await CellularPathProbe.isAvailable(.wifi) == true { return }
+        guard let cellularAvailable = await CellularPathProbe.isAvailable(.cellular) else {
+            throw CellularRefreshError.networkUnknown
+        }
+        if cellularAvailable { throw CellularRefreshError.foregroundRequired }
+    }
+
+    public func restoreBeforeSuspending() async -> Bool {
+        do {
+            try await turnOnDataIfNeeded()
+            guard UserDefaults.standard.string(forKey: Self.pendingRestoreKey) == nil else {
+                throw CellularRefreshError.recoveryRequired
+            }
+            return true
+        } catch {
+            await showRecoveryError(error)
             return false
         }
-
-        let success = await turnOffData()
-        if success {
-            didTurnOffData = true
-            let effectiveBaseDelay = turnOffDataBaseDelayOverride ?? AppConstants.Shortcuts.defaultTurnOffDataBaseDelay
-            await sleep(baseDelay: effectiveBaseDelay, addOnDelay: addOnDelay)
-            _ = await waitForMinimuxerReady(timeout: 2.0)
-        }
-        return success
     }
 
-    @discardableResult
-    public func turnOnDataIfNeeded(addOnDelay: TimeInterval = 0) async -> Bool {
-        guard didTurnOffData else { return false }
+    fileprivate func handleCallback(_ url: URL) -> Bool {
+        coordinator.handleCallback(url)
+    }
 
-        let success = await turnOnData()
-        if success {
-            didTurnOffData = false
+    public func retryPendingData() {
+        recoverPendingData(allowRetry: true)
+    }
+
+    fileprivate func recoverPendingData(allowRetry: Bool = false) {
+        Task {
+            do { try await coordinator.recoverPendingData(allowRetry: allowRetry) }
+            catch {
+                debugLog("[CellularRefreshManager] Pending recovery requires attention: \(error.localizedDescription)")
+                await showRecoveryError(error)
+            }
         }
-        let effectiveBaseDelay = turnOnDataBaseDelayOverride ?? AppConstants.Shortcuts.defaultTurnOnDataBaseDelay
-        await sleep(baseDelay: effectiveBaseDelay, addOnDelay: addOnDelay)
-        return success
+    }
+
+    @MainActor
+    private func showRecoveryError(_ error: Error) {
+        guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+            .flatMap({ $0.windows }).first(where: { $0.isKeyWindow }) else { return }
+        ToastView(text: NSLocalizedString("Cellular Data Needs Attention", comment: ""),
+                  detailText: error.localizedDescription).show(in: window)
+    }
+}
+
+// Called by both SideStore and the actual LiveContainer host, without starting a refresh.
+@objc(SSCellularRefreshBridge)
+final class SSCellularRefreshBridge: NSObject {
+    @objc(handleCallback:)
+    static func handleCallback(_ url: URL) -> Bool {
+        CellularRefreshManager.shared.handleCallback(url)
+    }
+
+    @objc static func recoverPendingData() {
+        CellularRefreshManager.shared.recoverPendingData()
+    }
+}
+
+private final class CellularPathProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private let monitor: NWPathMonitor
+    private var continuation: CheckedContinuation<Bool?, Never>?
+
+    private init(_ type: NWInterface.InterfaceType, continuation: CheckedContinuation<Bool?, Never>) {
+        monitor = NWPathMonitor(requiredInterfaceType: type)
+        self.continuation = continuation
+    }
+
+    static func isAvailable(_ type: NWInterface.InterfaceType) async -> Bool? {
+        await withCheckedContinuation { continuation in
+            let probe = CellularPathProbe(type, continuation: continuation)
+            probe.monitor.pathUpdateHandler = { path in probe.finish(path.status == .satisfied) }
+            probe.monitor.start(queue: DispatchQueue.global(qos: .utility))
+            Task {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                probe.finish(nil)
+            }
+        }
+    }
+
+    private func finish(_ available: Bool?) {
+        let completion = lock.withLock {
+            let result = continuation
+            continuation = nil
+            return result
+        }
+        guard let completion else { return }
+        monitor.cancel()
+        monitor.pathUpdateHandler = nil
+        completion.resume(returning: available)
     }
 }

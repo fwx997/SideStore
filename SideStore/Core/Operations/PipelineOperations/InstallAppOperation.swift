@@ -68,10 +68,10 @@ final class InstallAppOperation: BasePipelineOperation<InstallAppOperationContex
                 authTeam: authTeam
             )
             self.context.installedApp = installedApp
-            await CellularRefreshManager.shared.turnOnDataIfNeeded()
+            try await CellularRefreshManager.shared.turnOnDataIfNeeded()
             return installedApp
         } catch {
-            await CellularRefreshManager.shared.turnOnDataIfNeeded()
+            try? await CellularRefreshManager.shared.turnOnDataIfNeeded()
             throw error
         }
     }
@@ -388,9 +388,11 @@ final class InstallAppOperation: BasePipelineOperation<InstallAppOperationContex
         }
     }
         
-    private func suspendToHomeScreen() async {
+    private func suspendToHomeScreen() async -> Bool {
+        guard await CellularRefreshManager.shared.restoreBeforeSuspending() else { return false }
         let handler = self.context.handler.installAppHandler
         await handler.suspendToHomeScreen()
+        return true
     }
 
     private func handleSelfReinstallation(for installedApp: InstalledApp) async {
@@ -398,7 +400,8 @@ final class InstallAppOperation: BasePipelineOperation<InstallAppOperationContex
         await BackgroundServiceManager.stop()
 
         // Reinstalling ourself will hang until we leave the app, so we need to exit it without force closing
-        Task.detached {
+        // Preserve the cellular transaction owner while finishing this self-installation.
+        Task {
             let bgTaskID = await MainActor.run {
                 UIApplication.shared.beginBackgroundTask(withName: "SelfReinstall", expirationHandler: nil)
             }
@@ -419,7 +422,7 @@ final class InstallAppOperation: BasePipelineOperation<InstallAppOperationContex
             let delaySeconds = AppConstants.Installation.selfInstallSuspendDelayNs / 1_000_000_000
             self.debugLog("[InstallAppOperation] We are still installing after \(delaySeconds) seconds")
             
-            await self.suspendToHomeScreen()
+            guard await self.suspendToHomeScreen() else { return }
 
             // zh-patch: 私有 suspend 调用在 LC 内嵌环境/新 iOS 上可能静默无效。
             // 3 秒后若仍在前台, 弹出官方"完成刷新"提示框, 引导用户回主屏完成重装 (避免无声卡住)

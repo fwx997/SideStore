@@ -318,7 +318,8 @@ final class PipelineHandler: PipelineExecutionHandler,
     }
     
     func suspendToHomeScreen() async {
-        await CellularRefreshManager.shared.turnOnDataIfNeeded()
+        // zh-patch: Never kill the owner before its pending network recovery is confirmed.
+        guard await CellularRefreshManager.shared.restoreBeforeSuspending() else { return }
         await MainActor.run {
             _ = UIApplication.shared.perform(#selector(NSXPCConnection.suspend))
         }

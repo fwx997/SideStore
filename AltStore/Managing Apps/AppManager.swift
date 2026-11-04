@@ -683,15 +683,17 @@ final class AppManager: ObservableObject, @unchecked Sendable
     @discardableResult
     func backgroundRefresh(_ installedApps: [InstalledApp],
                            presentsNotifications: Bool = false,
+                           ignoresServerNotFoundError: Bool = true,
                            completionHandler: @escaping (Result<[String: Result<InstalledApp, Error>], Error>) -> Void) throws -> BackgroundRefreshAppsOperation
     {
         let dbBackgroundContext = DatabaseManager.shared.persistentContainer.newBackgroundContext()
         let context = StandaloneOperationContext(steps: .backgroundRefreshApps, dbBackgroundContext: dbBackgroundContext)
         let backgroundRefreshAppsOperation = try BackgroundRefreshAppsOperation(installedApps: installedApps, context: context)
+        // Configure before dispatch so a fast completion cannot observe stale flags.
+        backgroundRefreshAppsOperation.presentsFinishedNotification = presentsNotifications
+        backgroundRefreshAppsOperation.ignoresServerNotFoundError = ignoresServerNotFoundError
         Task.detached {
             do {
-                backgroundRefreshAppsOperation.presentsFinishedNotification = presentsNotifications
-                
                 let result = try await backgroundRefreshAppsOperation.execute()
                 completionHandler(.success(result))
             } catch {

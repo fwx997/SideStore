@@ -40,7 +40,16 @@ final class InjectBatchProfilesOperation: BaseStandaloneOperation<StandaloneOper
 
         debugLog("[InjectBatchProfilesOperation] Running batch injection for \(self.batches.count) app(s)")
 
-        await CellularRefreshManager.shared.turnOffDataIfNeeded()
+        // zh-patch: Batch failures/cancellation must restore data just like single-app refresh.
+        try await CellularRefreshManager.shared.withRestorationScope {
+            try await self.injectBatches()
+        }
+        debugLog("[InjectBatchProfilesOperation] Batch profile injection completed for all \(self.batches.count) app(s)")
+        self.setProgress(100)
+    }
+
+    private func injectBatches() async throws {
+        try await CellularRefreshManager.shared.turnOffDataIfNeeded()
         for batch in self.batches {
             debugLog("[InjectBatchProfilesOperation] Installing \(batch.profiles.count) profile(s) for \(batch.bundleID)...")
             for profileData in batch.profiles {
@@ -62,8 +71,6 @@ final class InjectBatchProfilesOperation: BaseStandaloneOperation<StandaloneOper
             self.onAppCompleted?(batch.bundleID)
             debugLog("[InjectBatchProfilesOperation] Successfully processed \(batch.bundleID)")
         }
-        await CellularRefreshManager.shared.turnOnDataIfNeeded()
-        debugLog("[InjectBatchProfilesOperation] Batch profile injection completed for all \(self.batches.count) app(s)")
-        self.setProgress(100)
+        try await CellularRefreshManager.shared.turnOnDataIfNeeded()
     }
 }

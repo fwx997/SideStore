@@ -38,11 +38,11 @@ final class UninstallAppOperation: BasePipelineOperation<InstallAppOperationCont
         
         // send uninstall payload to device
         do {
-            await CellularRefreshManager.shared.turnOffDataIfNeeded()
+            try await CellularRefreshManager.shared.turnOffDataIfNeeded()
             try await removeApp(resignedBundleIdentifier)
-            await CellularRefreshManager.shared.turnOnDataIfNeeded()
+            try await CellularRefreshManager.shared.turnOnDataIfNeeded()
         } catch {
-            await CellularRefreshManager.shared.turnOnDataIfNeeded()
+            try? await CellularRefreshManager.shared.turnOnDataIfNeeded()
             throw error
         }
         

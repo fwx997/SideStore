@@ -605,7 +605,7 @@ struct UserCustomizationsView: View {
             VStack(spacing: 0) {
                 toggleRow(
                     title: "Cellular Refresh",
-                    subtitle: "Automatically toggle cellular data via Shortcuts during refresh",
+                    subtitle: "Keep the app open for cellular refresh. Use Wi-Fi for background refresh.",
                     isOn: Binding(
                         get: { isCellularRefreshEnabled },
                         set: { newValue in
@@ -634,6 +634,14 @@ struct UserCustomizationsView: View {
                     value: turnOffDataShortcutName,
                     onTap: openTurnOffShortcutDialog
                 )
+
+                divider
+
+                SwiftUI.Button(action: { CellularRefreshManager.shared.retryPendingData() }) {
+                    Text("Restore Cellular Data")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                }
 
                 divider
 

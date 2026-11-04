@@ -289,9 +289,7 @@ final class PipelineRunner: Sendable
                 )
                 try await scheduleNotifOp.execute()
             }
-            await CellularRefreshManager.shared.turnOnDataIfNeeded()
         } catch {
-            await CellularRefreshManager.shared.turnOnDataIfNeeded()
             progress.set(nil, for: operation)
             
             let elapsed = CFAbsoluteTimeGetCurrent() - group.operationStartTime
@@ -374,15 +372,18 @@ final class PipelineRunner: Sendable
         
         let permissionsMode = UserDefaults.standard.permissionCheckingDisabled ? .none : permissionReviewMode
         let operationProgress = progress.progress(for: operation)
-        return try await PipelineExecutor.shared.executePipeline(
-            steps: pipelineSteps,
-            context: context,
-            operation: operation,
-            group: group,
-            downloadingApp: downloadingApp,
-            permissionsMode: permissionsMode,
-            operationProgress: operationProgress
-        )
+        // zh-patch: Send and Install share one owner; no parallel app can restore its network.
+        return try await CellularRefreshManager.shared.withRestorationScope {
+            try await PipelineExecutor.shared.executePipeline(
+                steps: pipelineSteps,
+                context: context,
+                operation: operation,
+                group: group,
+                downloadingApp: downloadingApp,
+                permissionsMode: permissionsMode,
+                operationProgress: operationProgress
+            )
+        }
     }
 }
 

@@ -75,6 +75,8 @@ final class BackgroundRefreshAppsOperation: BaseStandaloneOperation<OperationCon
         }
         
         do {
+            // Background invocations cannot safely launch the cellular toggle shortcuts.
+            try await CellularRefreshManager.shared.checkBackgroundRefreshAllowed()
             if #available(iOS 17, *) {
                 // TODO: iOS 17 and above have a new JIT implementation that is completely broken in SideStore :(
             }

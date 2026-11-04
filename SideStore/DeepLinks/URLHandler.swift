@@ -30,6 +30,11 @@ class URLHandler {
         debugLog("[URLHandler] Matched host: \(host), path: \(url.path.lowercased())")
         
         switch host {
+        case "cellular-refresh":
+            // Consume stale callbacks too; they must never start a new signing operation.
+            _ = SSCellularRefreshBridge.handleCallback(url)
+            return true
+
         case "appbackupresponse":
             let result: Result<Void, Error>
             switch url.path.lowercased() {

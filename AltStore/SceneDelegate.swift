@@ -47,6 +47,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate
     func sceneDidBecomeActive(_ scene: UIScene)
     {
         debugLog("[SceneDelegate] sceneDidBecomeActive() invoked")
+        SSCellularRefreshBridge.recoverPendingData()
         defer {
             // dump sidebackup logs if any
             Task.detached { await AppDelegate.dumpSideBackupLogsIfNeeded() }

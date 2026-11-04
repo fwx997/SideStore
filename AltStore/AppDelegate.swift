@@ -240,6 +240,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func applicationDidBecomeActive(_ application: UIApplication)
     {
+        SSCellularRefreshBridge.recoverPendingData()
         // Flush any .ipa import that arrived before the app was active (cold launch).
         guard let url = self.pendingImportIPAURL else { return }
         self.pendingImportIPAURL = nil
