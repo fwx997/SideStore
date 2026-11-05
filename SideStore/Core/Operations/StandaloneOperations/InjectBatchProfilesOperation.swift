@@ -12,12 +12,12 @@ import SideSign
 
 final class InjectBatchProfilesOperation: BaseStandaloneOperation<StandaloneOperationContext, Void>, @unchecked Sendable {
     let batches: [PendingProfileBatch]
-    var onAppCompleted: (@Sendable (String) -> Void)?
+    var onAppCompleted: (@Sendable (String, InstalledApp) async throws -> Void)?
 
     init(
         batches: [PendingProfileBatch],
         context: StandaloneOperationContext,
-        onAppCompleted: (@Sendable (String) -> Void)? = nil
+        onAppCompleted: (@Sendable (String, InstalledApp) async throws -> Void)? = nil
     ) throws {
         self.batches = batches
         self.onAppCompleted = onAppCompleted
@@ -51,26 +51,35 @@ final class InjectBatchProfilesOperation: BaseStandaloneOperation<StandaloneOper
     private func injectBatches() async throws {
         try await CellularRefreshManager.shared.turnOffDataIfNeeded()
         for batch in self.batches {
+            try Task.checkCancellation()
             debugLog("[InjectBatchProfilesOperation] Installing \(batch.profiles.count) profile(s) for \(batch.bundleID)...")
-            for profileData in batch.profiles {
-                try await installProvisioningProfiles(profileData)
+            for profile in batch.profiles.values {
+                try Task.checkCancellation()
+                try await installProvisioningProfiles(profile.data)
             }
 
-            if let installedApp = batch.app, let dbContext = installedApp.managedObjectContext {
-                debugLog("[InjectBatchProfilesOperation] Updating database record for \(batch.bundleID)...")
-                try await dbContext.perform {
-                    if let certStatus = batch.certStatus {
-                        installedApp.certificateStatus = certStatus
-                    }
-                    if dbContext.hasChanges {
-                        try dbContext.save()
-                    }
-                }
-            }
-
-            self.onAppCompleted?(batch.bundleID)
+            let installedApp = try await self.updateInstalledApp(for: batch)
+            try await self.onAppCompleted?(batch.bundleID, installedApp)
             debugLog("[InjectBatchProfilesOperation] Successfully processed \(batch.bundleID)")
         }
         try await CellularRefreshManager.shared.turnOnDataIfNeeded()
+    }
+
+    private func updateInstalledApp(for batch: PendingProfileBatch) async throws -> InstalledApp {
+        let dbContext = self.context.dbBackgroundContext
+        let objectID = batch.app.objectID
+        return try await dbContext.perform {
+            guard let installedApp = try dbContext.existingObject(with: objectID) as? InstalledApp else {
+                throw OperationError.invalidParameters("Could not find installed database record for '\(batch.bundleID)'")
+            }
+            // Only persist new dates after every profile for this app was installed.
+            // The cellular device path still needs proper testing on a real phone.
+            try installedApp.update(provisioningProfiles: batch.profiles)
+            if let certStatus = batch.certStatus {
+                installedApp.certificateStatus = certStatus
+            }
+            try dbContext.save()
+            return installedApp
+        }
     }
 }

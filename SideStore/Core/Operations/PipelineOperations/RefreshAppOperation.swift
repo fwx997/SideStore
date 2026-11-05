@@ -31,17 +31,17 @@ final class RefreshAppOperation: BasePipelineOperation<InstallAppOperationContex
         self.setProgress(10)
         
         if self.context.isCellularRefreshGroup {
-            debugLog("[RefreshAppOperation] Queueing \(self.context.bundleIdentifier) into batch profile injection (isCellularRefreshGroup = true)")
-            self.context.sharedContext.addPendingProfileBatch(PendingProfileBatch(
-                bundleID: self.context.bundleIdentifier,
-                profiles: profiles.values.map { $0.data },
-                app: self.context.installedApp,
-                certStatus: self.context.targetCertStatus
-            ))
-            self.setProgress(85)
             guard let app = self.context.installedApp else {
                 throw OperationError.invalidParameters("RefreshAppOperation: context.installedApp is nil")
             }
+            debugLog("[RefreshAppOperation] Queueing \(self.context.bundleIdentifier) into batch profile injection (isCellularRefreshGroup = true)")
+            self.context.sharedContext.addPendingProfileBatch(PendingProfileBatch(
+                bundleID: self.context.bundleIdentifier,
+                profiles: profiles,
+                app: app,
+                certStatus: self.context.targetCertStatus
+            ))
+            self.setProgress(85)
             return app
         }
         
@@ -74,16 +74,12 @@ final class RefreshAppOperation: BasePipelineOperation<InstallAppOperationContex
               let installedApp = dbContext.object(with: mainApp.objectID) as? InstalledApp else {
             throw OperationError.invalidParameters("Could not find installed database record for '\(appBundle.name)'")
         }
-        installedApp.update(provisioningProfile: profiles.values.first!)
+        try installedApp.update(provisioningProfiles: profiles)
         
         if let certStatus = self.context.targetCertStatus {
             installedApp.certificateStatus = certStatus
         }
 
-        for installedExtension in installedApp.appExtensions {
-            guard let provisioningProfile = profiles[installedExtension.bundleIdentifier] else { continue }
-            installedExtension.update(provisioningProfile: provisioningProfile)
-        }
         return installedApp
     }
 }

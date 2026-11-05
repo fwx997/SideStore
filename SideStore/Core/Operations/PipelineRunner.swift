@@ -225,10 +225,12 @@ final class PipelineRunner: Sendable
             let injectOp = try InjectBatchProfilesOperation(
                 batches: Array(group.sharedContext.pendingProfiles.values),
                 context: injectContext,
-                onAppCompleted: { [weak self] bundleID in
-                    if let op = operations.first(where: { $0.bundleIdentifier == bundleID }) {
-                        self?.progress.progress(for: op)?.completedUnitCount = 100
+                onAppCompleted: { bundleID, installedApp in
+                    guard let op = operations.first(where: { $0.bundleIdentifier == bundleID }) else {
+                        throw OperationError.invalidParameters("Missing batch refresh operation for '\(bundleID)'")
                     }
+                    try await self.completeOperation(op, result: installedApp, group: group, operationsCount: operationsCount)
+                    self.progress.progress(for: op)?.completedUnitCount = 100
                 }
             )
             try await injectOp.execute()
@@ -251,44 +253,12 @@ final class PipelineRunner: Sendable
         }
         do {
             let result = try await self.performPipeline(for: operation, handler: handler, group: group, operationsCount: operationsCount)
-            if operationsCount <= 1 {
-                progress.set(nil, for: operation)
-                debugLog("[AppManager] performOperation: completed successfully. progress was reset for installedApp: \(result.bundleIdentifier)")
+            // Queuing profiles is not a completed refresh. The batch callback finalizes it.
+            if group.sharedContext.pendingProfiles[operation.bundleIdentifier] != nil {
+                debugLog("[AppManager] performOperation: Waiting for batch profile injection for \(operation.bundleIdentifier)")
+                return
             }
-            
-            // persist the result
-            let bundleID = result.bundleIdentifier
-            let dbContext = group.dbContext
-            do {
-                try await dbContext.perform {
-                    let hasChanges = dbContext.hasChanges
-                    if hasChanges {
-                        try dbContext.save()
-                    }
-                    debugLog("[AppManager] performOperation: Context changes were saved for installedApp: \(bundleID)")
-                }
-            } catch {
-                debugLog("[AppManager] perform(): Failed to save InstalledApp to database. \(error.localizedDescription)")
-            }
-            
-            group.set(.success(result), forAppWithBundleIdentifier: bundleID)
-            debugLog("[AppManager] performOperation: Execution SUCCESS for app: \(operation.bundleIdentifier)")
-            
-            let elapsed = CFAbsoluteTimeGetCurrent() - group.operationStartTime
-            operation.logSummary(status: "SUCCESS", elapsed: elapsed)
-            
-            debugLog("[AppManager] performOperation: Reloading widget timelines...")
-            await WidgetDataManager.publishCurrentInstalledApps(in: dbContext)
-            debugLog("[AppManager] performOperation: Reloading COMPLETE for widget timelines.")
-            
-            if result.bundleIdentifier == StoreApp.altstoreAppID {
-                let context = StandaloneOperationContext(steps: .scheduleExpirationWarningNotification, dbBackgroundContext: group.dbContext)
-                let scheduleNotifOp = try ScheduleExpirationWarningNotificationOperation(
-                    installedApp: result,
-                    context: context
-                )
-                try await scheduleNotifOp.execute()
-            }
+            try await self.completeOperation(operation, result: result, group: group, operationsCount: operationsCount)
         } catch {
             progress.set(nil, for: operation)
             
@@ -314,6 +284,32 @@ final class PipelineRunner: Sendable
             
             group.set(.failure(mappedError), forAppWithBundleIdentifier: operation.bundleIdentifier)
         }
+    }
+
+    private func completeOperation(_ operation: AppOperation, result: InstalledApp,
+                                   group: RefreshGroup, operationsCount: Int) async throws {
+        if operationsCount <= 1 {
+            progress.set(nil, for: operation)
+        }
+        let dbContext = group.dbContext
+        try await dbContext.perform {
+            if dbContext.hasChanges {
+                try dbContext.save()
+            }
+        }
+
+        group.set(.success(result), forAppWithBundleIdentifier: operation.bundleIdentifier)
+        let elapsed = CFAbsoluteTimeGetCurrent() - group.operationStartTime
+        operation.logSummary(status: "SUCCESS", elapsed: elapsed)
+        await WidgetDataManager.publishCurrentInstalledApps(in: dbContext)
+        await MainActor.run {
+            DatabaseManager.shared.viewContext.processPendingChanges()
+        }
+
+        guard operation.bundleIdentifier == StoreApp.altstoreAppID else { return }
+        let context = StandaloneOperationContext(steps: .scheduleExpirationWarningNotification, dbBackgroundContext: dbContext)
+        let scheduleNotifOp = try ScheduleExpirationWarningNotificationOperation(installedApp: result, context: context)
+        try await scheduleNotifOp.execute()
     }
     
     private func performPipeline(for operation: AppOperation, handler: PipelineExecutionHandler, group: RefreshGroup, operationsCount: Int = 1) async throws -> InstalledApp

@@ -313,6 +313,23 @@ public extension InstalledApp
         self.refreshedDate = provisioningProfile.creationDate
         self.expirationDate = provisioningProfile.expirationDate
     }
+
+    // zh-patch: Single and batch refresh must persist the same profile dates.
+    func update(provisioningProfiles: [String: ALTProvisioningProfile]) throws
+    {
+        let mainBundleIdentifier = self.customBundleIdentifier ?? self.bundleIdentifier
+        guard let mainProfile = provisioningProfiles[mainBundleIdentifier] else {
+            throw ALTError.invalidApp(reason: "Missing provisioning profile for '\(mainBundleIdentifier)'")
+        }
+        self.update(provisioningProfile: mainProfile)
+
+        for appExtension in self.appExtensions {
+            let identifier = appExtension.customBundleIdentifier ?? appExtension.bundleIdentifier
+            let profile = self.useMainProfile ? mainProfile : provisioningProfiles[identifier]
+            guard let profile else { continue }
+            appExtension.update(provisioningProfile: profile)
+        }
+    }
     
     func loadIcon() async throws -> UIImage?
     {
