@@ -189,10 +189,12 @@ struct BackgroundRefreshContextRegression {
                 context: OperationContext(fixture.newContext()))
         }
 
-        // Real CoreData proves that retaining fetched objects does not retain their context.
-        expect(callerContext == nil, "The original fetch context was not released")
-        expect(originalApps.allSatisfy { $0.managedObjectContext == nil }, "Released caller still owns its objects")
-        fixture.verify(operation)
+        // Keep the source objects alive while proving their context was released.
+        // Reading an invalidated object's context property is not supported.
+        withExtendedLifetime(originalApps) {
+            expect(callerContext == nil, "The original fetch context was not released")
+            fixture.verify(operation)
+        }
         let results = try await operation.runRefresh()
         expect(AppManager.shared.receivedContext === operation.context.dbBackgroundContext,
                      "Refresh handed its apps to a different database context")
