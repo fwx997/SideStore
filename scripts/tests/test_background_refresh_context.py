@@ -211,6 +211,7 @@ struct BackgroundRefreshContextRegression {
             _ = try BackgroundRefreshAppsOperation(installedApps: [temporary],
                 context: OperationContext(fixture.newContext()))
         }
+        caller.performAndWait { caller.reset() }
 
         let apps = try fixture.fetch(in: caller)
         try caller.performAndWait {
