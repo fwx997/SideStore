@@ -16,6 +16,7 @@ public enum OperationError: LocalizedError, CustomNSError, Sendable, Equatable {
     case unableToConnectSideJIT
     case unableToRespondSideJITDevice
     case unknownResult
+    case remotePairingRequired
 
     case cacheClearError(errors: [String])
     case certificateExpired(appName: String)
@@ -62,6 +63,8 @@ public enum OperationError: LocalizedError, CustomNSError, Sendable, Equatable {
             return "SideJITServer is unable to connect to your iDevice. Please make sure you have paired your iDevice by running 'SideJITServer -y', or try refreshing SideJITServer from Settings."
         case .unknownResult:
             return "The operation returned an unknown result."
+        case .remotePairingRequired:
+            return "The current local VPN connection cannot use Lockdown pairing on this system. Open Settings > Pairing File Management and import a Remote Pairing file, or create one with Wireless Pairing. Then restart the app and try again. Keep LocalDevVPN connected."
 
         case .cacheClearError(let errors):
             return "An error occurred while clearing the cache: \(errors.joined(separator: "\n"))"

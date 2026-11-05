@@ -1906,6 +1906,7 @@
 "Saved to WidgetLogs/%@" = "已保存到 WidgetLogs/%@";
 
 /* Confirmed cellular shortcut completion and unattended refresh status. */
+"The current local VPN connection cannot use Lockdown pairing on this system. Open Settings > Pairing File Management and import a Remote Pairing file, or create one with Wireless Pairing. Then restart the app and try again. Keep LocalDevVPN connected." = "当前系统的本地 VPN 连接无法使用 Lockdown 配对。请打开“设置 → 配对文件管理”，导入远程配对（Remote Pairing）文件，或通过“无线配对”创建，然后重新启动应用再试。请保持 LocalDevVPN 已连接。";
 "Cellular refresh requires the app to be open and the device unlocked. Open the app and refresh again, or use Wi-Fi for background refresh." = "蜂窝续签需要解锁设备并保持应用在前台。请打开应用重新续签；后台自动续签请使用 Wi-Fi。";
 "Another cellular operation is still running. Wait for it to finish and try again." = "另一个蜂窝操作尚未完成，请稍后重试。";
 "Could not open the shortcut '%@'. Check its name and run the refresh from the open app." = "无法打开快捷指令“%@”。请检查指令名称，并在应用前台执行续签。";

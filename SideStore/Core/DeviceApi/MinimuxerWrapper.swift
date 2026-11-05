@@ -241,6 +241,8 @@ extension MinimuxerError {
         case .noConnection(let reason):         return .noConnection(reason: reason)
         case .notReachable(let reason):         return .notReachable(reason: reason)
         case .noVPN(let reason):                return .noVPN(reason: reason)
+        case .invalidVPN(let reason) where reason.contains("no ipsec/IKEv2 interface found"):
+            return .remotePairingRequired
         case .invalidVPN(let reason):           return .invalidVPN(reason: reason)
         case .invalidPairing(_, let reason):    return .invalidPairingFile(reason: reason)
         case .notStarted(let reason):           return .minimuxerNotStarted(reason: reason)
@@ -494,7 +496,6 @@ extension Result {
 func minimuxerSwitchPairingProtocol(to proto: PairingProtocol) async throws {
     defer { debugLog("[SideStore] minimuxerSwitchPairingProtocol(.\(proto)) completed") }
     debugLog("[SideStore] minimuxerSwitchPairingProtocol(.\(proto)) invoked")
-    PairingFileManager.shared.persistedActiveProtocol = proto
     #if !targetEnvironment(simulator)
     try await withRemotePairingRetry {
         debugLog("[SideStore] switchPairingProtocol(to: \(proto.rawValue)) entered")

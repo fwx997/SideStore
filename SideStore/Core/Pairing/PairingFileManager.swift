@@ -27,8 +27,8 @@ final class PairingFileManager: NSObject {
     }
 
     // zh-patch: 解析配对文件内容所属协议 (RP / lockdown)
-    private nonisolated static func pairingMode(of contents: String) -> PairingProtocol? {
-        guard let parsed = try? PairingFileParser.parse(content: contents, preferred: nil) else { return nil }
+    private nonisolated static func pairingMode(of contents: String, preferred: PairingProtocol? = nil) -> PairingProtocol? {
+        guard let parsed = try? PairingFileParser.parse(content: contents, preferred: preferred) else { return nil }
         return parsed.mode
     }
 
@@ -36,18 +36,27 @@ final class PairingFileManager: NSObject {
     // 嵌入包内 (bundle 资源或 Info.plist), 内容随安装刷新。上游新版只读 Documents,
     // 这里保留嵌入文件这一来源: 实时读取不落盘, 避免 Sideloadly 重装后用到旧信任文件。
     nonisolated static func embeddedRPPairingFile() -> String? {
+        // LiveContainer changes Bundle.main to SideStoreApp.framework; the installer
+        // embeds pairing credentials in the actual host app. This needs device testing.
+        for bundle in [Bundle.Info.activeBundle, Bundle.main] {
+            if let contents = embeddedRPPairingFile(in: bundle) { return contents }
+        }
+        return nil
+    }
+
+    private nonisolated static func embeddedRPPairingFile(in bundle: Bundle) -> String? {
         let fm = FileManager.default
-        if let url = Bundle.main.url(forResource: AppConstants.Pairing.bundleResourceName, withExtension: AppConstants.Pairing.bundleResourceFileExtension),
+        if let url = bundle.url(forResource: AppConstants.Pairing.bundleResourceName, withExtension: AppConstants.Pairing.bundleResourceFileExtension),
            fm.fileExists(atPath: url.path),
            let data = fm.contents(atPath: url.path),
            let contents = String(data: data, encoding: .utf8), !contents.isEmpty,
-           pairingMode(of: contents) == .rppairing
+           pairingMode(of: contents, preferred: .rppairing) == .rppairing
         {
             return contents
         }
-        if let plistString = Bundle.main.object(forInfoDictionaryKey: AppConstants.Pairing.bundleResourceName) as? String,
+        if let plistString = bundle.object(forInfoDictionaryKey: AppConstants.Pairing.bundleResourceName) as? String,
            !plistString.isEmpty, !plistString.contains(AppConstants.Pairing.placeholderString),
-           pairingMode(of: plistString) == .rppairing
+           pairingMode(of: plistString, preferred: .rppairing) == .rppairing
         {
             return plistString
         }
@@ -78,18 +87,7 @@ final class PairingFileManager: NSObject {
     }
 
     nonisolated func hasPairingFile() -> Bool {
-        guard !UserDefaults.standard.isPairingReset else {
-            // zh-patch: 嵌入 RP 文件无视 isPairingReset 门控 (Sideloadly 每次安装重新生成并预信任)
-            return Self.embeddedRPPairingFile() != nil
-        }
-        if let target = preferredProtocol, hasPairingFile(for: target) {
-            return true
-        }
-        if let mode = persistedActiveProtocol, hasPairingFile(for: mode) {
-            return true
-        }
-        // zh-patch: LC+Sideloadly 场景 Documents 可能没有配对文件, 但包内嵌有可用 RP 文件
-        return Self.embeddedRPPairingFile() != nil
+        fetchPairingFile() != nil
     }
 
     nonisolated func metadata(for mode: PairingProtocol) -> PairingFileMetadata {
@@ -107,10 +105,12 @@ final class PairingFileManager: NSObject {
     }
 
     nonisolated func fetchPairingFile(for mode: PairingProtocol) -> String? {
+        guard mode != .unknown else { return nil }
         let fileURL = pairingFileURL(for: mode)
         let fm = FileManager.default
         if fm.fileExists(atPath: fileURL.path),
-           let contents = try? String(contentsOf: fileURL), !contents.isEmpty
+           let contents = try? String(contentsOf: fileURL), !contents.isEmpty,
+           Self.pairingMode(of: contents, preferred: mode) == mode
         {
             return contents
         }
@@ -122,6 +122,34 @@ final class PairingFileManager: NSObject {
         return nil
     }
 
+    private nonisolated var prefersRemotePairing: Bool {
+        if #available(iOS 26.4, tvOS 26.4, *) {
+            return ConnectionConfig.shared.useLocalVPN && !minimuxer.network.isIKEv2IPSecAvailable
+        }
+        return false
+    }
+
+    // Resolve the content independently of a stale saved preference. Dual-format
+    // files still need an explicit mode; single-format files already identify it.
+    private nonisolated func parseForStartup(_ contents: String) throws -> any PairingFile {
+        if prefersRemotePairing,
+           let remote = try? parse(content: contents, preferred: .rppairing) {
+            return remote
+        }
+        if let parsed = try? parse(content: contents) { return parsed }
+        return try parse(content: contents, preferred: preferredProtocol ?? persistedActiveProtocol)
+    }
+
+    nonisolated func pairingFileForStartup(_ contents: String) throws -> any PairingFile {
+        let parsed = try parseForStartup(contents)
+        guard parsed.mode == .lockdown, prefersRemotePairing else { return parsed }
+        let remote = UserDefaults.standard.isPairingReset
+            ? Self.embeddedRPPairingFile() : fetchPairingFile(for: .rppairing)
+        guard let remote else { return parsed }
+        debugLog("[PairingFile] zh-patch: selecting available Remote Pairing for local VPN on iOS 26.4+")
+        return try parse(content: remote, preferred: .rppairing)
+    }
+
     nonisolated func fetchPairingFile(preferred: PairingProtocol? = nil) -> String? {
         guard !UserDefaults.standard.isPairingReset else {
             // zh-patch: 嵌入 RP 文件无视 isPairingReset 门控 (该门控针对手动导入的 lockdown 文件流程)
@@ -131,11 +159,18 @@ final class PairingFileManager: NSObject {
             }
             return nil
         }
+        // A saved Lockdown preference must not hide an imported Remote Pairing file
+        // on systems where the current local VPN cannot carry Lockdown traffic.
+        if prefersRemotePairing, let remote = fetchPairingFile(for: .rppairing) {
+            return remote
+        }
         let targetPreferred = preferred ?? preferredProtocol
         if let targetPreferred, let contents = fetchPairingFile(for: targetPreferred) {
             // zh-patch: iOS 17+ lockdown 直连传输被设备拒收 (连接即断, AFC/instproxy 全断),
             // 嵌入 RP 可用时优先用 RP, 避免进入不可用的 .lockdown 模式
-            if #available(iOS 17, *), Self.pairingMode(of: contents) == .lockdown,
+            if #available(iOS 17, *), ConnectionConfig.shared.useLocalVPN,
+               !minimuxer.network.isIKEv2IPSecAvailable,
+               Self.pairingMode(of: contents) == .lockdown,
                let rp = Self.embeddedRPPairingFile() {
                 debugLog("[PairingFile] zh-patch: lockdown pairing selected on iOS 17+; preferring embedded RP-format pairing file")
                 return rp
@@ -143,12 +178,18 @@ final class PairingFileManager: NSObject {
             return contents
         }
         if let persisted = persistedActiveProtocol, let contents = fetchPairingFile(for: persisted) {
-            if #available(iOS 17, *), Self.pairingMode(of: contents) == .lockdown,
+            if #available(iOS 17, *), ConnectionConfig.shared.useLocalVPN,
+               !minimuxer.network.isIKEv2IPSecAvailable,
+               Self.pairingMode(of: contents) == .lockdown,
                let rp = Self.embeddedRPPairingFile() {
                 debugLog("[PairingFile] zh-patch: lockdown pairing selected on iOS 17+; preferring embedded RP-format pairing file")
                 return rp
             }
             return contents
+        }
+        // Imported files can outlive their preference keys (for example, migration).
+        for mode in [PairingProtocol.rppairing, .lockdown] {
+            if let contents = fetchPairingFile(for: mode) { return contents }
         }
         // zh-patch: 无任何 Documents 来源时兜底返回嵌入 RP 文件, 保持 LC+Sideloadly 开箱即用
         if let contents = Self.embeddedRPPairingFile() {
@@ -168,7 +209,7 @@ final class PairingFileManager: NSObject {
         let legacyURL = fm.documentsDirectory.appendingPathComponent(AppConstants.Pairing.legacyPairingFileName)
         guard fm.fileExists(atPath: legacyURL.path),
               let content = try? String(contentsOf: legacyURL), !content.isEmpty,
-              let parsed = try? parse(content: content, preferred: nil)
+              let parsed = try? parseForStartup(content)
         else { return }
         let targetURL = pairingFileURL(for: parsed.mode)
         if fm.fileExists(atPath: targetURL.path) {
