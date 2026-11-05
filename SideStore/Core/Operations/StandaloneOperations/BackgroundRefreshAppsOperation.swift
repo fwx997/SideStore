@@ -42,8 +42,22 @@ final class BackgroundRefreshAppsOperation: BaseStandaloneOperation<OperationCon
     private var runningApplications: Set<String> = []
     
     init(installedApps: [InstalledApp], context: OperationContext) throws {
-        self.installedApps = installedApps
+        // zh-patch: shortcut preparation may release its fetch context immediately
+        // after dispatch. Resolve IDs into the context retained by this operation.
+        let objectIDs = installedApps.map(\.objectID)
+        let dbContext = context.dbBackgroundContext
+        self.installedApps = try dbContext.performAndWait {
+            try objectIDs.map { try Self.resolveInstalledApp($0, in: dbContext) }
+        }
         try super.init(context: context)
+    }
+
+    private static func resolveInstalledApp(_ objectID: NSManagedObjectID, in context: NSManagedObjectContext) throws -> InstalledApp {
+        guard !objectID.isTemporaryID,
+              let app = try context.existingObject(with: objectID) as? InstalledApp else {
+            throw OperationError.invalidParameters("Could not resolve an installed app selected for background refresh.")
+        }
+        return app
     }
     
     override func execute(parentProgress: Progress?) async throws -> [String: Result<InstalledApp, Error>] {
@@ -109,7 +123,8 @@ final class BackgroundRefreshAppsOperation: BaseStandaloneOperation<OperationCon
 
     private func refresh(_ apps: [InstalledApp]) async throws -> [String: Result<InstalledApp, Error>] {
         return try await withCheckedThrowingContinuation { continuation in
-            let group = AppManager.shared.refresh(apps, presentingViewController: nil)
+            let group = AppManager.shared.refresh(apps, presentingViewController: nil,
+                                                  dbContext: self.context.dbBackgroundContext)
             group.beginInstallationHandler = { [weak self] (installedApp) in
                 guard let self = self else { return }
                 guard installedApp.bundleIdentifier == StoreApp.altstoreAppID else { return }
