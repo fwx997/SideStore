@@ -18,6 +18,17 @@ SWIFTC = shutil.which("swiftc")
 HARNESS = r'''
 import Foundation
 import CoreData
+import Darwin
+
+func fail(_ message: String) -> Never {
+    fputs("Regression failed: " + message + "\n", stderr)
+    fflush(stderr)
+    exit(1)
+}
+
+func expect(_ condition: Bool, _ message: String) {
+    if !condition { fail(message) }
+}
 
 @objc(RefreshContextTestInstalledApp)
 final class InstalledApp: NSManagedObject {
@@ -142,12 +153,12 @@ final class Fixture {
     func verify(_ operation: BackgroundRefreshAppsOperation) {
         let context = operation.context.dbBackgroundContext
         context.performAndWait {
-            precondition(operation.installedApps.map(\.objectID) == objectIDs)
+            expect(operation.installedApps.map(\.objectID) == objectIDs, "Selected object IDs changed")
             for (app, record) in zip(operation.installedApps, Self.records) {
-                precondition(app.managedObjectContext === context, "Refresh retained an app from the caller's context")
-                precondition(app.bundleIdentifier == record.0, "Bundle identifier was lost")
-                precondition(app.name == record.1, "App name was lost")
-                precondition(app.certificateSerialNumber == record.2, "Certificate metadata was lost")
+                expect(app.managedObjectContext === context, "Refresh retained an app from the caller's context")
+                expect(app.bundleIdentifier == record.0, "Bundle identifier was lost")
+                expect(app.name == record.1, "App name was lost")
+                expect(app.certificateSerialNumber == record.2, "Certificate metadata was lost")
             }
         }
     }
@@ -155,11 +166,15 @@ final class Fixture {
 
 @main
 struct BackgroundRefreshContextRegression {
-    static func main() async throws {
-        try await releasedCaller()
-        try resetCaller()
-        try invalidSelection()
-        print("Background refresh CoreData ownership regression passed")
+    static func main() async {
+        do {
+            try await releasedCaller()
+            try resetCaller()
+            try invalidSelection()
+            print("Background refresh CoreData ownership regression passed")
+        } catch {
+            fail("Unexpected CoreData error: \(error)")
+        }
     }
 
     static func releasedCaller() async throws {
@@ -175,18 +190,18 @@ struct BackgroundRefreshContextRegression {
         }
 
         // Real CoreData proves that retaining fetched objects does not retain their context.
-        precondition(callerContext == nil, "The original fetch context was not released")
-        precondition(originalApps.allSatisfy { $0.managedObjectContext == nil })
+        expect(callerContext == nil, "The original fetch context was not released")
+        expect(originalApps.allSatisfy { $0.managedObjectContext == nil }, "Released caller still owns its objects")
         fixture.verify(operation)
         let results = try await operation.runRefresh()
-        precondition(AppManager.shared.receivedContext === operation.context.dbBackgroundContext,
+        expect(AppManager.shared.receivedContext === operation.context.dbBackgroundContext,
                      "Refresh handed its apps to a different database context")
-        precondition(Set(results.keys) == Set(Fixture.records.map { $0.0 }))
+        expect(Set(results.keys) == Set(Fixture.records.map { $0.0 }), "Refresh result bundle identifiers changed")
         for result in results.values {
             let app = try result.get()
-            precondition(app.managedObjectContext === operation.context.dbBackgroundContext)
+            expect(app.managedObjectContext === operation.context.dbBackgroundContext, "Results lost their owning context")
         }
-        precondition(operation.progress.completedUnitCount == 100)
+        expect(operation.progress.completedUnitCount == 100, "Refresh progress did not finish")
         print("case: original fetch context released before detached refresh; names, IDs and certificates preserved")
     }
 
@@ -207,7 +222,7 @@ struct BackgroundRefreshContextRegression {
         let temporary = caller.performAndWait {
             NSEntityDescription.insertNewObject(forEntityName: "InstalledApp", into: caller) as! InstalledApp
         }
-        expectFailure {
+        expectFailure("temporary selection") {
             _ = try BackgroundRefreshAppsOperation(installedApps: [temporary],
                 context: OperationContext(fixture.newContext()))
         }
@@ -218,21 +233,21 @@ struct BackgroundRefreshContextRegression {
             caller.delete(apps[0])
             try caller.save()
         }
-        expectFailure {
+        expectFailure("deleted selection") {
             _ = try BackgroundRefreshAppsOperation(installedApps: [apps[0]],
                 context: OperationContext(fixture.newContext()))
         }
 
         let empty = try BackgroundRefreshAppsOperation(installedApps: [],
             context: OperationContext(fixture.newContext()))
-        precondition(empty.installedApps.isEmpty)
+        expect(empty.installedApps.isEmpty, "Empty selection was not preserved")
         print("case: temporary and deleted selections fail; an empty selection is preserved")
     }
 
-    static func expectFailure(_ work: () throws -> Void) {
+    static func expectFailure(_ name: String, _ work: () throws -> Void) {
         do {
             try work()
-            preconditionFailure("Invalid selection was accepted")
+            fail("Invalid " + name + " was accepted")
         } catch {}
     }
 }
