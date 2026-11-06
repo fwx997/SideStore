@@ -275,15 +275,19 @@ struct CellularRegression {
     static func dispatchedDeadline() async throws {
         let pending = BackgroundRefreshSession(deadline: .now + .milliseconds(20))
         let operationFinished = BackgroundRefreshWaiter()
+        let releaseOperation = BackgroundRefreshWaiter()
         try pending.dispatch {
             Task {
-                try await Task.sleep(nanoseconds: 80_000_000)
+                // Keep work pending until expiry has actually been observed.
+                // Sleeping 80ms raced the 20ms timer on a busy CI runner.
+                try await releaseOperation.waitForResult()
                 pending.finish(.success(()))
                 operationFinished.finish(.success(()))
             }
         }
         do { try await pending.wait(); preconditionFailure("Must not report success before completion") }
         catch BackgroundRefreshPendingError.stillRunning { }
+        releaseOperation.finish(.success(()))
         try await operationFinished.wait(timeout: 1, onTimeout: {})
         do { try await pending.wait(); preconditionFailure("Late result changed the timeout outcome") }
         catch BackgroundRefreshPendingError.stillRunning { }
