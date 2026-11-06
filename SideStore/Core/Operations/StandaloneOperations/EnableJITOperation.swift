@@ -86,6 +86,9 @@ final class EnableJITOperation: BaseStandaloneOperation<StandaloneOperationConte
                 }
             }
         } else {
+            try await VPNOperationContext.$isInteractive.withValue(true) {
+                try await VPNAppManager.requireVPN()
+            }
             self.setProgress(30)
 
             var lastError: Error?

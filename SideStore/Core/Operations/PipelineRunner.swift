@@ -103,6 +103,17 @@ final class PipelineRunner: Sendable
                  handler: PipelineExecutionHandler,
                  group: RefreshGroup) async throws -> RefreshGroup
     {
+        // Explicit invocation context survives concurrent app operations. A
+        // shortcut must never become interactive just because the app is visible.
+        try await VPNOperationContext.$isInteractive.withValue(handler.allowsVPNAppHandoff) {
+            try await performOperations(operations, handler: handler, group: group)
+        }
+    }
+
+    private func performOperations(_ operations: [AppOperation],
+                                   handler: PipelineExecutionHandler,
+                                   group: RefreshGroup) async throws -> RefreshGroup
+    {
         let operations = operations.filter { progress.progress(for: $0) == nil || progress.progress(for: $0)?.isCancelled == true }
         guard !operations.isEmpty else { throw OperationError.cancelled }
 

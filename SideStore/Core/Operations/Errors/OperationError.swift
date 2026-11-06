@@ -23,6 +23,7 @@ public enum OperationError: LocalizedError, CustomNSError, Sendable, Equatable {
     case certificateRevoked(appName: String)
     case customCertificateExpired(appName: String, activeTeam: String)
     case customCertificateRevoked(appName: String, activeTeam: String)
+    case deviceConnectionFailed(reason: String)
     case forbidden(failureReason: String, file: String = #fileID, line: UInt = #line)
     case invalidApp(reason: String)
     case invalidPairingFile(reason: String)
@@ -76,6 +77,8 @@ public enum OperationError: LocalizedError, CustomNSError, Sendable, Equatable {
             return "Your active custom/third-party signing certificate (Team: \(activeTeam)) has expired.\n\nIf you did not intend to use a custom certificate, please reset it in Settings -> Advanced -> Certificates."
         case .customCertificateRevoked(_, let activeTeam):
             return "Your active custom/third-party signing certificate (Team: \(activeTeam)) was revoked on the Developer Portal.\n\nIf you did not intend to use a custom certificate, please reset it in Settings -> Advanced -> Certificates."
+        case .deviceConnectionFailed:
+            return "Could not transfer files to the device. Check the local VPN connection and pairing file, then try again. Technical details are available in the error log."
         case .forbidden(let reason, _, _):
             return reason
         case .invalidApp(let reason):
@@ -104,8 +107,8 @@ public enum OperationError: LocalizedError, CustomNSError, Sendable, Equatable {
             return "Network Connection Error:\n\(reason)\n\nPlease connect to Wi-Fi before attempting further operations."
         case .noDevice(let reason):
             return "SideStore is unable to reach the device endpoint:\n\(reason)\n\nPlease check your Connection Configuration in Settings."
-        case .noVPN(let reason):
-            return "VPN Connection Error:\n\(reason)\n\nPlease make sure LocalDevVPN is connected and running properly."
+        case .noVPN:
+            return "VPN is not connected. Open your local VPN app and connect it, then return and retry. You can choose the app in Settings > VPN Auto-Open."
         case .notReachable(let reason):
             return reason.isEmpty ? "Device is not reachable at the specified IP or Endpoint." : reason
         case .openAppFailed(let name):
@@ -133,7 +136,9 @@ public enum OperationError: LocalizedError, CustomNSError, Sendable, Equatable {
         switch self {
         case .invalidPairingFile:
             return NSLocalizedString("Import a valid mobiledevicepairing file.", comment: "")
-        case .invalidVPN, .noVPN:
+        case .noVPN:
+            return NSLocalizedString("Connect your local VPN and retry. Background shortcuts will not open the VPN app automatically.", comment: "")
+        case .invalidVPN:
             return NSLocalizedString("Make sure LocalDevVPN is connected and running!", comment: "")
         case .noConnection:
             return NSLocalizedString("Connect to a Wi-Fi network, Bridge or a Wired network connection!", comment: "")

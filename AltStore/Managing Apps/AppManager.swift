@@ -734,6 +734,7 @@ extension AppManager: PipelineProgress, PipelineExecutionContext, PipelineErrorL
     private func makePipelineHandler(presentingViewController: UIViewController?) -> PipelineExecutionHandler {
         return PipelineHandler(
             isResignActive: presentingViewController is ResignAltStoreViewController,
+            allowsVPNAppHandoff: presentingViewController != nil,
             presenterProvider: { [weak presentingViewController] in
                 presentingViewController?.presentedViewController ?? presentingViewController
             }

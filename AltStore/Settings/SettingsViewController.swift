@@ -86,6 +86,7 @@ extension SettingsViewController
         case certificateManagement  // row 9 - Certificate Management
         case backupAndRestore       // row 10 - Backup & Restore
         case userCustomizations     // row 11 - User Customizations
+        case vpnAutoOpen            // programmatic row; preserve storyboard indices
 
         static var allCases: [AdvancedSettingsRow] {
             var rows: [AdvancedSettingsRow] = [.sendFeedback, .refreshAttempts, .refreshSideJITServer, .pairingFileManagement]
@@ -94,6 +95,7 @@ extension SettingsViewController
             }
             rows.append(contentsOf: [
                 .connectionConfig,
+                .vpnAutoOpen,
                 .networkDiscovery,
                 .developerServices,
                 .profileManagement,
@@ -956,6 +958,7 @@ extension SettingsViewController
     
     override func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat
     {
+        if isVPNSettingsRow(indexPath) { return 51 }
         if Section.allCases[indexPath.section] == .account && indexPath.row == 3 {
             return AccountVerificationRow.preferredHeight
         }
@@ -985,6 +988,7 @@ extension SettingsViewController
 
     override func tableView(_ tableView: UITableView, indentationLevelForRowAt indexPath: IndexPath) -> Int
     {
+        if isVPNSettingsRow(indexPath) { return 0 }
         if Section.allCases[indexPath.section] == .account && indexPath.row == 3 {
             return 0
         }
@@ -1014,6 +1018,7 @@ extension SettingsViewController
     
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell
     {
+        if isVPNSettingsRow(indexPath) { return makeVPNSettingsCell() }
         if Section.allCases[indexPath.section] == .account && indexPath.row == 3 {
             let cell = tableView.dequeueReusableCell(withIdentifier: AccountVerificationRow.reuseIdentifier) as? AccountVerificationRow
                 ?? AccountVerificationRow()
@@ -1058,6 +1063,25 @@ extension SettingsViewController
         }
         
         
+        return cell
+    }
+
+    private func isVPNSettingsRow(_ indexPath: IndexPath) -> Bool {
+        Section.allCases[indexPath.section] == .advancedSettings &&
+        AdvancedSettingsRow.allCases[indexPath.row] == .vpnAutoOpen
+    }
+
+    private func makeVPNSettingsCell() -> UITableViewCell {
+        let cell = InsetGroupTableViewCell(style: .default, reuseIdentifier: nil)
+        cell.style = .middle
+        cell.isSelectable = true
+        cell.textLabel?.text = NSLocalizedString("VPN Auto-Open", comment: "")
+        cell.textLabel?.textColor = .white
+        cell.textLabel?.font = .boldSystemFont(ofSize: 17)
+        cell.layoutMargins = UIEdgeInsets(top: 8, left: 30, bottom: 8, right: 30)
+        let chevron = UIImageView(image: UIImage(systemName: "chevron.right"))
+        chevron.tintColor = .white
+        cell.accessoryView = chevron
         return cell
     }
     
@@ -1305,6 +1329,9 @@ extension SettingsViewController
                 
                 let vc = UIHostingController(rootView: anisetteServersView)
                 self.prepare(for: UIStoryboardSegue(identifier: "anisetteServers", source: self, destination: vc), sender: nil)
+
+            case .vpnAutoOpen:
+                navigationController?.pushViewController(UIHostingController(rootView: VPNSettingsView()), animated: true)
 
             case .connectionConfig:
                 let connectionConfigView = ConnectionConfigView()

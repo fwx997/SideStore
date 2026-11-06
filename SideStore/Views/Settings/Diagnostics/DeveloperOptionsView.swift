@@ -693,7 +693,9 @@ struct DeveloperOptionsView: View {
         isDumpingProfiles = true
         defer { isDumpingProfiles = false }
         do {
-            let zipPath = try await safeDumpProfiles(docsURL.path)
+            let zipPath = try await VPNOperationContext.$isInteractive.withValue(true) {
+                try await safeDumpProfiles(docsURL.path)
+            }
             let fileName = URL(fileURLWithPath: zipPath).lastPathComponent
             dumpProfilesAlertMessage = "Profiles saved to:\n\(fileName)"
             showDumpProfilesAlert = true

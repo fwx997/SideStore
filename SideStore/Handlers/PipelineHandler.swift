@@ -26,13 +26,16 @@ final class PipelineHandler: PipelineExecutionHandler,
     var userCustomizationHandler: UserCustomizationHandler { self }
     
     let isResignActive: Bool
+    let allowsVPNAppHandoff: Bool
     private let presenterProvider: PresenterProvider?
     
     init(
         isResignActive: Bool = false,
+        allowsVPNAppHandoff: Bool = false,
         presenterProvider: PresenterProvider? = nil
     ) {
         self.isResignActive = isResignActive
+        self.allowsVPNAppHandoff = allowsVPNAppHandoff
         self.presenterProvider = presenterProvider
     }
 

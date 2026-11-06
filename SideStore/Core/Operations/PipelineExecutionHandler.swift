@@ -10,12 +10,17 @@ import Foundation
 import SideSign
 
 protocol PipelineExecutionHandler: AnyObject, Sendable {
+    var allowsVPNAppHandoff: Bool { get }
     var preflightChecksHandler: PreflightChecksHandler { get }
     var entitlementsReviewHandler: EntitlementsReviewHandler { get }
     var extensionRemovalHandler: ExtensionRemovalHandler { get }
     var unsupportedVersionHandler: UnsupportedVersionHandler { get }
     var installAppHandler: InstallAppHandler { get }
     var userCustomizationHandler: UserCustomizationHandler { get }
+}
+
+extension PipelineExecutionHandler {
+    var allowsVPNAppHandoff: Bool { false }
 }
 
 

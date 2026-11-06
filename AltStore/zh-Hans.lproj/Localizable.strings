@@ -1921,3 +1921,29 @@
 "Refresh is still running in the background. Keep the VPN connected and check the final notification. Refresh has not been confirmed yet." = "续签仍在后台执行，尚未确认完成。请保持 VPN 连接，并以最终通知为准。";
 "The current network could not be confirmed. Keep the app open, check the VPN, and try again." = "无法确认当前网络状态。请保持应用在前台，检查 VPN 后重试。";
 "Refresh could not start before the shortcut timed out. No refresh was started. Keep the VPN connected and try again." = "快捷指令等待超时，续签尚未启动。请保持 VPN 连接后重试。";
+
+/* VPN handoff and clear device connection errors. */
+"VPN Auto-Open" = "VPN 自动跳转";
+"Automatically Open VPN App" = "未连接时自动打开 VPN App";
+"When a foreground operation needs the local VPN and it is not connected, open the selected app. Connect the VPN, return here, and retry. Background refresh will not open another app." = "在应用前台手动执行需要本地 VPN 的操作时，若未连接 VPN，将打开所选应用。请连接 VPN 后返回重试。快捷指令和后台刷新不会自动跳转。";
+"VPN App" = "VPN 应用";
+"Not Installed" = "未安装";
+"Other VPN App via Shortcuts" = "通过快捷指令选择其他 VPN";
+"Choose an installed app in Shortcuts" = "在快捷指令中选择本机应用";
+"Custom App URL" = "自定义应用启动链接";
+"Use a launch URL provided by the VPN app" = "填写 VPN 应用提供的启动链接";
+"Refresh Installed Apps" = "重新检测已安装应用";
+"iOS only allows detecting apps with a supported launch URL. For WireGuard, StosVPN, or other apps, use Shortcuts to choose an installed app. The VPN must support SideStore's local device connection." = "iOS 仅允许检测支持启动链接的应用。WireGuard、StosVPN 等应用可通过快捷指令的系统应用列表选择。所选 VPN 需要支持 SideStore 的本机设备连接。";
+"Shortcut Name" = "快捷指令名称";
+"Open Shortcuts" = "打开快捷指令";
+"Choose Another Installed VPN App" = "选择其他已安装的 VPN 应用";
+"In Shortcuts, create a shortcut, add the Open App action, and select your VPN app from the system app list. Enter that shortcut's exact name here. You can also use a shortcut that connects your local VPN." = "打开“快捷指令”，新建指令并添加“打开 App”操作，再从系统应用列表中选择 VPN 应用。将该指令的完整名称填到这里。也可以选择用于连接本地 VPN 的快捷指令。";
+"App Launch URL" = "应用启动链接";
+"Enter the VPN app's documented URL, for example localdevvpn://. Web links are not supported. Use the button below to test the URL." = "填写 VPN 应用说明中提供的启动链接，例如 localdevvpn://。不支持网页链接，可点击下方按钮测试是否能打开。";
+"Open Selected VPN App" = "打开所选 VPN 应用";
+"Opening an app does not confirm that its VPN is connected. Enable the VPN in that app before retrying your operation." = "打开应用不代表 VPN 已连接。请在该应用中开启 VPN，再返回重试。";
+"Could Not Open VPN App" = "无法打开 VPN 应用";
+"Check that the selected app is installed and its launch URL or shortcut name is correct. You can also open the VPN app manually." = "请确认已安装所选应用，且启动链接或快捷指令名称正确。也可以手动打开 VPN 应用。";
+"VPN is not connected. Open your local VPN app and connect it, then return and retry. You can choose the app in Settings > VPN Auto-Open." = "尚未开启 VPN。请打开本地 VPN 应用并连接，然后返回重试。可在“设置 → VPN 自动跳转”中选择要打开的应用。";
+"Connect your local VPN and retry. Background shortcuts will not open the VPN app automatically." = "请连接本地 VPN 后重试。快捷指令在后台刷新时不会自动打开 VPN 应用。";
+"Could not transfer files to the device. Check the local VPN connection and pairing file, then try again. Technical details are available in the error log." = "无法向设备传输文件。请检查本地 VPN 连接和配对文件后重试，技术详情可在错误日志中查看。";

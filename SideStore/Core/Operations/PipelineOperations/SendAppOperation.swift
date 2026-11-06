@@ -46,6 +46,7 @@ final class SendAppOperation: BasePipelineOperation<InstallAppOperationContext, 
         } catch {
             try? await CellularRefreshManager.shared.turnOnDataIfNeeded()
             if error is CellularRefreshError || error is CancellationError { throw error }
+            if let operationError = error as? OperationError, case .noVPN = operationError { throw error }
 
             // zh-patch: AFC 连接经 LocalDevVPN 隧道偶发瞬断 (Broken pipe)。
             // 2 秒后自动重试一次; 重试仍失败才抛错 (按上游约定保留原始错误, 不再掩盖)
