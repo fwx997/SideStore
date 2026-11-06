@@ -105,7 +105,7 @@ final class PipelineRunner: Sendable
     {
         // Explicit invocation context survives concurrent app operations. A
         // shortcut must never become interactive just because the app is visible.
-        try await VPNOperationContext.$isInteractive.withValue(handler.allowsVPNAppHandoff) {
+        try await VPNOperationContext.withOperation(isInteractive: handler.allowsVPNAppHandoff) {
             try await performOperations(operations, handler: handler, group: group)
         }
     }

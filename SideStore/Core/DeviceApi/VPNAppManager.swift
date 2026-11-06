@@ -4,7 +4,6 @@ import UIKit
 
 @MainActor
 enum VPNAppManager {
-    private static var lastAutomaticOpen: TimeInterval = -.infinity
     private static var isOpening = false
 
     static var isForeground: Bool {
@@ -49,8 +48,8 @@ enum VPNAppManager {
 
     private static func automaticallyOpenIfNeeded() async {
         guard VPNOperationContext.isInteractive, VPNAppPreferences.automaticallyOpens(), isForeground, !isOpening,
-              ProcessInfo.processInfo.systemUptime - lastAutomaticOpen >= 15 else { return }
-        lastAutomaticOpen = ProcessInfo.processInfo.systemUptime
+              VPNOperationContext.claimHandoff() else { return }
+        debugLog("[VPNAppManager] Opening VPN app once for this manual operation.")
         _ = await openSelectedApp()
     }
 

@@ -693,7 +693,7 @@ struct DeveloperOptionsView: View {
         isDumpingProfiles = true
         defer { isDumpingProfiles = false }
         do {
-            let zipPath = try await VPNOperationContext.$isInteractive.withValue(true) {
+            let zipPath = try await VPNOperationContext.withOperation(isInteractive: true) {
                 try await safeDumpProfiles(docsURL.path)
             }
             let fileName = URL(fileURLWithPath: zipPath).lastPathComponent

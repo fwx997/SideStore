@@ -3,7 +3,30 @@ import Foundation
 
 enum VPNOperationContext {
     // Background refresh/Shortcuts are noninteractive even if the host is visible.
-    @TaskLocal static var isInteractive = false
+    @TaskLocal private static var handoffAttempt: VPNHandoffAttempt?
+
+    static var isInteractive: Bool { handoffAttempt != nil }
+
+    static func withOperation<T>(isInteractive: Bool, operation: () async throws -> T) async rethrows -> T {
+        // Each manual invocation gets a fresh attempt, shared by its child tasks.
+        // Returning from the VPN app must not delay the user's next invocation.
+        try await $handoffAttempt.withValue(isInteractive ? VPNHandoffAttempt() : nil, operation: operation)
+    }
+
+    static func claimHandoff() -> Bool { handoffAttempt?.claim() ?? false }
+}
+
+private final class VPNHandoffAttempt: @unchecked Sendable {
+    private let lock = NSLock()
+    private var claimed = false
+
+    func claim() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !claimed else { return false }
+        claimed = true
+        return true
+    }
 }
 
 enum VPNAppDestination: String, CaseIterable {

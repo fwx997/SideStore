@@ -40,8 +40,17 @@ final class UIScene: Hashable {
     var connectedScenes: Set<UIScene> = [UIScene()]
     var opens: [URL] = []
     var acceptsURL = true
+    var shouldSuspendOpen = false
+    var onOpen: (() -> Void)?
+    var pendingOpen: CheckedContinuation<Bool, Never>?
     func open(_ url: URL) async -> Bool {
         opens.append(url)
+        if shouldSuspendOpen {
+            return await withCheckedContinuation {
+                pendingOpen = $0
+                onOpen?()
+            }
+        }
         return acceptsURL
     }
 }
@@ -119,6 +128,8 @@ final class PipelineRunner {
         detection()
         try await backgroundRefreshIsUnchanged()
         try await manualPreflight()
+        try await sameOperationOpensOnce()
+        try await overlappingOpenRequests()
         try await transportFailures()
         try await cancellation()
         print("PASS: preferences, VPN detection, foreground handoff, and unchanged background shortcut flow")
@@ -218,27 +229,94 @@ final class PipelineRunner {
         }
         precondition(UIApplication.shared.opens.count == 1)
         precondition(UIApplication.shared.opens[0].scheme == "localdevvpn")
+        // Return without enabling the VPN and immediately click again. A new
+        // manual request must open the app without waiting for a wall-clock gate.
+        UIApplication.shared.applicationState = .background
+        UIApplication.shared.applicationState = .active
         do { _ = try await runner.perform([], handler: handler, group: RefreshGroup()) }
         catch OperationError.noVPN { }
-        precondition(UIApplication.shared.opens.count == 1, "Concurrent/repeated failures must not relaunch")
+        precondition(UIApplication.shared.opens.count == 2, "A new manual request must reopen immediately")
         precondition(!VPNOperationContext.isInteractive)
         minimuxer.network.activeInterfaces = [.init(name: "utun6", ip: "10.7.0.2")]
         let group = try await runner.perform([], handler: handler, group: RefreshGroup())
-        precondition(group.completed && UIApplication.shared.opens.count == 1)
+        precondition(group.completed && UIApplication.shared.opens.count == 2)
         ConnectionConfig.shared.useLocalVPN = false
         minimuxer.network.activeInterfaces = []
         let remote = try await runner.perform([], handler: handler, group: RefreshGroup())
-        precondition(remote.completed && UIApplication.shared.opens.count == 1)
+        precondition(remote.completed && UIApplication.shared.opens.count == 2)
         ConnectionConfig.shared.useLocalVPN = true
         CellularRefreshManager.shared.isEnabled = false
         UserDefaults.standard.set(VPNAppDestination.customURL.rawValue, forKey: VPNAppPreferences.destinationKey)
         UserDefaults.standard.set("", forKey: VPNAppPreferences.customURLKey)
         let invalidOpened = await VPNAppManager.openSelectedApp()
-        precondition(!invalidOpened && UIApplication.shared.opens.count == 1)
+        precondition(!invalidOpened && UIApplication.shared.opens.count == 2)
         UserDefaults.standard.removeObject(forKey: VPNAppPreferences.destinationKey)
         UIApplication.shared.acceptsURL = false
         let rejected = await VPNAppManager.openSelectedApp()
         precondition(!rejected)
+        UIApplication.shared.acceptsURL = true
+    }
+
+    @MainActor static func expectMissingVPN() async throws {
+        do {
+            try await VPNAppManager.requireVPN()
+            preconditionFailure("Expected missing VPN")
+        } catch OperationError.noVPN { }
+    }
+
+    @MainActor static func sameOperationOpensOnce() async throws {
+        let opens = UIApplication.shared.opens.count
+        minimuxer.network.activeInterfaces = []
+        try await VPNOperationContext.withOperation(isInteractive: true) {
+            try await concurrentVPNChecks()
+            UIApplication.shared.applicationState = .background
+            UIApplication.shared.applicationState = .active
+            try await expectMissingVPN()
+            precondition(UIApplication.shared.opens.count == opens + 1, "One operation must not reopen after returning")
+            // A nested background invocation must not inherit launch permission.
+            try await VPNOperationContext.withOperation(isInteractive: false) {
+                try await VPNAppManager.requireVPN()
+                precondition(!VPNOperationContext.isInteractive)
+            }
+        }
+        precondition(!VPNOperationContext.isInteractive)
+        try await VPNOperationContext.withOperation(isInteractive: true) { try await expectMissingVPN() }
+        precondition(UIApplication.shared.opens.count == opens + 2)
+        UIApplication.shared.acceptsURL = false
+        try await VPNOperationContext.withOperation(isInteractive: true) { try await expectMissingVPN() }
+        UIApplication.shared.acceptsURL = true
+        try await VPNOperationContext.withOperation(isInteractive: true) { try await expectMissingVPN() }
+        precondition(UIApplication.shared.opens.count == opens + 4, "A rejected launch must not block the next request")
+    }
+
+    static func concurrentVPNChecks() async throws {
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for _ in 0..<8 { group.addTask { try await expectMissingVPN() } }
+            try await group.waitForAll()
+        }
+    }
+
+    @MainActor static func overlappingOpenRequests() async throws {
+        let app = UIApplication.shared
+        let opens = app.opens.count
+        let (events, signal) = AsyncStream<Void>.makeStream()
+        var started = events.makeAsyncIterator()
+        app.shouldSuspendOpen = true
+        app.onOpen = { signal.yield(()) }
+        let first = Task {
+            try await VPNOperationContext.withOperation(isInteractive: true) { try await expectMissingVPN() }
+        }
+        _ = await started.next()
+        try await VPNOperationContext.withOperation(isInteractive: true) { try await expectMissingVPN() }
+        precondition(app.opens.count == opens + 1, "In-flight launches must remain serialized")
+        app.pendingOpen?.resume(returning: true)
+        app.pendingOpen = nil
+        app.shouldSuspendOpen = false
+        app.onOpen = nil
+        signal.finish()
+        try await first.value
+        try await VPNOperationContext.withOperation(isInteractive: true) { try await expectMissingVPN() }
+        precondition(app.opens.count == opens + 2, "Completing a launch must immediately allow a new request")
     }
 
     @MainActor static func transportFailures() async throws {
@@ -259,7 +337,7 @@ final class PipelineRunner {
         catch TransportFailure.pairing { }
         // Drop the tunnel during an interactive operation: report failure, never
         // leave cellular restoration to open another app midway through transfer.
-        try await VPNOperationContext.$isInteractive.withValue(true) {
+        try await VPNOperationContext.withOperation(isInteractive: true) {
             do {
                 _ = try await withDeviceConnection {
                     minimuxer.network.activeInterfaces = []
@@ -277,7 +355,7 @@ final class PipelineRunner {
         catch is CancellationError { }
         let task = Task {
             withUnsafeCurrentTask { $0?.cancel() }
-            try await VPNOperationContext.$isInteractive.withValue(true) {
+            try await VPNOperationContext.withOperation(isInteractive: true) {
                 try await VPNAppManager.requireVPN()
             }
         }
