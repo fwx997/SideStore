@@ -103,7 +103,7 @@ struct VPNSettingsView: View {
         TextField(title, text: text)
             #if !os(tvOS)
             .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
+            .disableAutocorrection(true)
             #endif
     }
 
