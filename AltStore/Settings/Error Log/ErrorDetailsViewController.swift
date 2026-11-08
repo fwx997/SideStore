@@ -17,6 +17,7 @@ class ErrorDetailsViewController: UIViewController
     override func viewDidLoad()
     {
         super.viewDidLoad()
+        SettingsPageStyle.system.apply(to: self.navigationItem, tintColor: .altPrimary)
 
         if let error = self.loggedError?.error
         {

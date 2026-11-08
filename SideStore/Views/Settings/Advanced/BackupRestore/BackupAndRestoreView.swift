@@ -124,6 +124,7 @@ struct BackupAndRestoreView: View {
         }
         .background(Color(uiColor: .settingsBackground).ignoresSafeArea())
         .navigationTitle("Backup & Restore")
+        .settingsAppearance(.branded)
         #if !os(tvOS)
         .navigationBarTitleDisplayMode(.large)
         #endif

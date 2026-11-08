@@ -88,6 +88,7 @@ struct PairingFileDetailView: View {
         }
         .background(Color(uiColor: .settingsBackground).ignoresSafeArea())
         .navigationTitle(titleText)
+        .settingsAppearance(.branded)
         #if !os(tvOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif

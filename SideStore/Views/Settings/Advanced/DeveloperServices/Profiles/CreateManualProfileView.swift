@@ -234,6 +234,7 @@ struct CreateManualProfileView: View {
                 }
             }
             .navigationTitle("New Profile")
+            .settingsAppearance()
             .navigationBarItems(
                 leading: SwiftUI.Button("Cancel") {
                     presentationMode.wrappedValue.dismiss()

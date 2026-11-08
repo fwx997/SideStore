@@ -32,6 +32,7 @@ struct PairingFileManagementView: View {
         }
         .background(Color(uiColor: .settingsBackground).ignoresSafeArea())
         .navigationTitle("Pairing File Management")
+        .settingsAppearance(.branded)
         #if !os(tvOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif

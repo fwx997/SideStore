@@ -43,6 +43,7 @@ struct ThemePickerView: View {
         }
         .background(Color(uiColor: .settingsBackground).ignoresSafeArea())
         .navigationTitle("Theme Manager")
+        .settingsAppearance(.branded)
         #if !os(tvOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif

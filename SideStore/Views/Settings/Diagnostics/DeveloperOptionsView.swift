@@ -639,6 +639,7 @@ struct DeveloperOptionsView: View {
         }
         .background(Color(uiColor: .settingsBackground).ignoresSafeArea())
         .navigationTitle("Developer Options")
+        .settingsAppearance(.branded)
         #if !os(tvOS)
         .navigationBarTitleDisplayMode(.large)
         #endif

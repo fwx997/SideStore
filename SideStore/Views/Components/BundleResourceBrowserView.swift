@@ -74,6 +74,7 @@ struct BundleResourceBrowserView: View {
         .navigationTitle(isSelecting
             ? (selectedURLs.isEmpty ? "Select Files" : "\(selectedURLs.count) selected")
             : title)
+        .settingsAppearance()
         .searchable(text: $searchQuery, prompt: "Search files")
         .toolbar {
             // Trailing: Select / Done
@@ -376,6 +377,7 @@ struct IPAContentsView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .navigationTitle(ipaURL.deletingPathExtension().lastPathComponent)
+                .settingsAppearance()
                 #if !os(tvOS)
                 .navigationBarTitleDisplayMode(.inline)
                 #endif
@@ -394,6 +396,7 @@ struct IPAContentsView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .navigationTitle(ipaURL.deletingPathExtension().lastPathComponent)
+                .settingsAppearance()
                 #if !os(tvOS)
                 .navigationBarTitleDisplayMode(.inline)
                 #endif
@@ -554,6 +557,7 @@ struct FullAppBundleView: View {
         .listStyle(GroupedListStyle())
         #endif
         .navigationTitle(displayName)
+        .settingsAppearance()
         .interactiveDismissDisabled(true)
     }
 
@@ -587,6 +591,7 @@ struct PlistResourceViewer: View {
             }
         }
         .navigationTitle(url.lastPathComponent)
+        .settingsAppearance()
         #if !os(tvOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -632,6 +637,7 @@ struct ResourceImageViewer: View {
             }
         }
         .navigationTitle(url.lastPathComponent)
+        .settingsAppearance()
         #if !os(tvOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -657,6 +663,7 @@ struct ResourceTextViewer: View {
                 .padding()
         }
         .navigationTitle(title ?? url?.lastPathComponent ?? "Text")
+        .settingsAppearance()
         #if !os(tvOS)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -740,6 +747,7 @@ struct ProvisioningProfileResourceViewer: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .navigationTitle(url.lastPathComponent)
+                .settingsAppearance()
             }
         }
     }

@@ -31,6 +31,13 @@ final class ErrorLogTableViewCell: UITableViewCell
     @IBOutlet var menuButton: UIButton!
     
     private var didLayoutSubviews = false
+
+    override func awakeFromNib()
+    {
+        super.awakeFromNib()
+        self.dateLabel.textColor = .secondaryLabel
+        self.errorCodeLabel.textColor = .secondaryLabel
+    }
     
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView?
     {

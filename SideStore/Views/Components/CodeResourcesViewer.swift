@@ -200,7 +200,7 @@ struct CodeResourcesViewer: View {
                             NavigationLink(destination: ResourceTextViewer(title: "CodeResources XML", explicitContent: rawXML)) {
                                 HStack {
                                     Image(systemName: "doc.plaintext")
-                                        .foregroundColor(.blue)
+                                        .foregroundColor(.accentColor)
                                     Text("View Raw XML")
                                         .font(.subheadline)
                                 }
@@ -234,6 +234,7 @@ struct CodeResourcesViewer: View {
         .listStyle(GroupedListStyle())
         #endif
         .navigationTitle(url.lastPathComponent)
+        .settingsAppearance()
         .searchable(text: $searchQuery, prompt: "Search sealed files or rules")
         .overlay(
             AppInfoToastView(isShowing: $isShowingToast, message: toastMessage)

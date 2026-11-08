@@ -97,6 +97,7 @@ struct ProfilesListView: View {
         .listStyle(GroupedListStyle())
         #endif
         .navigationTitle("Profiles")
+        .settingsAppearance()
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 SwiftUI.Button {

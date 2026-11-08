@@ -59,6 +59,7 @@ public struct StorageExplorerView: View {
         .listStyle(.grouped)
         #endif
         .navigationTitle("Storage Explorer")
+        .settingsAppearance()
         .onAppear {
             verboseLog("[StorageExplorerView] onAppear triggered")
             self.loadLocations()

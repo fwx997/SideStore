@@ -441,6 +441,7 @@ struct UserCustomizationsView: View {
         }
         .background(Color(uiColor: .settingsBackground).ignoresSafeArea())
         .navigationTitle("User Customizations")
+        .settingsAppearance(.branded)
         #if !os(tvOS)
         .navigationBarTitleDisplayMode(.large)
         #endif

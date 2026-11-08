@@ -309,20 +309,8 @@ final class SettingsViewController: UITableViewController
             let controller = segue.destination
             
         #if !os(tvOS)
-            if segue.identifier == "anisetteServers"        || 
-                segue.identifier == "developerServices"      ||
-                segue.identifier == "profileManagement"      ||
-                segue.identifier == "certificateManagement" || 
-                segue.identifier == "diagnostics"
-            {
-                let appearance = UINavigationBarAppearance()
-                appearance.configureWithDefaultBackground()
-                appearance.titleTextAttributes = [.foregroundColor: UIColor.white]
-                appearance.largeTitleTextAttributes = [.foregroundColor: UIColor.white]
-                controller.navigationItem.largeTitleDisplayMode = .always
-                controller.navigationItem.standardAppearance = appearance
-                controller.navigationItem.scrollEdgeAppearance = appearance
-            }
+            // Each SwiftUI page owns its navigation colors through settingsAppearance.
+            controller.navigationItem.largeTitleDisplayMode = .always
         #endif
             
             // disable bottom tab bar since 'back' button is already available

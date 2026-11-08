@@ -35,6 +35,7 @@ struct WirelessPairTargetDialog: View {
             .background(Color.black.ignoresSafeArea())
             .navigationTitle(viewModel.dialogMode == .client ? "Select Device To Pair" : "Select Server Interface")
             #endif
+            .settingsAppearance()
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     SwiftUI.Button {
@@ -43,9 +44,9 @@ struct WirelessPairTargetDialog: View {
                     } label: {
                         Image(systemName: "xmark")
                             .font(.system(size: 13, weight: .bold))
-                            .foregroundColor(.white)
+                            .foregroundColor(.primary)
                             .frame(width: 30, height: 30)
-                            .background(Color.white.opacity(0.18))
+                            .background(Color.secondary.opacity(0.15))
                             .clipShape(Circle())
                     }
                 }

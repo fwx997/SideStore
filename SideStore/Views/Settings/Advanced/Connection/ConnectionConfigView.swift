@@ -218,17 +218,17 @@ struct ConnectionConfigView: View {
                     
                     Text("Changes saved")
                         .font(.system(size: 20, weight: .medium))
-                        .foregroundColor(.white)
+                        .foregroundColor(.primary)
                     
                     SwiftUI.Button(action: {
                         showConfirmDialog = false
                     }) {
                         Text("OK")
                             .font(.system(size: 17, weight: .semibold))
-                            .foregroundColor(.white)
+                            .foregroundColor(.accentColor)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
-                            .background(Color.white.opacity(0.12))
+                            .background(Color.accentColor.opacity(0.12))
                             .clipShape(Capsule())
                     }
                     .buttonStyle(PlainButtonStyle())
@@ -236,13 +236,13 @@ struct ConnectionConfigView: View {
                 .padding(24)
                 .frame(width: 320)
                 .background(.ultraThinMaterial)
-                .environment(\.colorScheme, .dark)
                 .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
                 .shadow(color: Color.black.opacity(0.3), radius: 20, x: 0, y: 10)
                 .transition(.scale.combined(with: .opacity))
             }
         }
         .animation(.easeInOut, value: showConfirmDialog)
+        .settingsAppearance()
     }
 
     private func isIPv6Address(_ value: String) -> Bool {

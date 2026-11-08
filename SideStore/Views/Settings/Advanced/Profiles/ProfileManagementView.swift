@@ -134,7 +134,7 @@ struct ProfileManagementView: View {
                                     } label: {
                                         Label("Edit", systemImage: "pencil")
                                     }
-                                    .tint(.purple)
+                                    .tint(.accentColor)
                                 }
                             }
                             .swipeActions(edge: .leading, allowsFullSwipe: false) {
@@ -143,7 +143,7 @@ struct ProfileManagementView: View {
                                 } label: {
                                     Label("Share", systemImage: "square.and.arrow.up")
                                 }
-                                .tint(.blue)
+                                .tint(.accentColor)
                             }
                             #endif
                             .contextMenu {
@@ -196,6 +196,7 @@ struct ProfileManagementView: View {
             }
         }
         .navigationTitle("Profile Management")
+        .settingsAppearance()
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 SwiftUI.Button {

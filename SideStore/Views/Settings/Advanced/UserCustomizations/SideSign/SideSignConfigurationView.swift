@@ -451,6 +451,7 @@ struct SideSignConfigurationView: View {
         }
         .background(Color(uiColor: .settingsBackground).ignoresSafeArea())
         .navigationTitle("SideSign Config")
+        .settingsAppearance(.branded)
         #if !os(tvOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif

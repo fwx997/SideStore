@@ -31,6 +31,13 @@ final class RefreshAttemptsViewController: UITableViewController
     override func viewDidLoad()
     {
         super.viewDidLoad()
+
+        // zh-patch: This is a system-colored page inside the branded settings stack.
+        #if !os(tvOS)
+        self.tableView.backgroundColor = .systemBackground
+        #endif
+        self.view.tintColor = .altPrimary
+        SettingsPageStyle.system.apply(to: self.navigationItem, tintColor: .altPrimary)
         
         self.tableView.dataSource = self.dataSource
         self.dataSource.contentView = self.tableView
@@ -48,6 +55,8 @@ private extension RefreshAttemptsViewController
         let dataSource = FetchedResultsTableViewDataSource(fetchRequest: fetchRequest, managedObjectContext: DatabaseManager.shared.viewContext)
         dataSource.cellConfigurationHandler = { [weak self] (cell, attempt, indexPath) in
             let cell = cell as! RefreshAttemptTableViewCell
+            cell.dateLabel.textColor = .secondaryLabel
+            cell.errorDescriptionLabel.textColor = .label
             cell.dateLabel.text = self?.dateFormatter.string(from: attempt.date)
             cell.errorDescriptionLabel.text = attempt.errorDescription
             

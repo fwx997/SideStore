@@ -86,6 +86,7 @@ struct CacheManagementView: View {
             }
         }
         .navigationTitle("Cache Management")
+        .settingsAppearance()
         .onAppear {
             viewModel.loadCacheItems()
         }

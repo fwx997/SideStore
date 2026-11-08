@@ -307,6 +307,7 @@ struct CertificateDetailView: View {
             }
         }
         .navigationTitle("Certificate Details")
+        .settingsAppearance()
         #if !os(tvOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif

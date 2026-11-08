@@ -112,6 +112,7 @@ public struct DirectoryExplorerView: View {
             }
         }
         .navigationTitle(viewModel.currentURL.lastPathComponent)
+        .settingsAppearance()
         #if !os(tvOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif

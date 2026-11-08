@@ -156,7 +156,7 @@ struct AppInfoView: View {
                         } label: {
                             Image(systemName: showResignedProfile ? "checkmark.circle.fill" : "circle")
                                 .font(.subheadline)
-                                .foregroundColor(showResignedProfile ? .blue : .secondary)
+                                .foregroundColor(showResignedProfile ? .accentColor : .secondary)
                         }
                         .buttonStyle(BorderlessButtonStyle())
                     }) {
@@ -217,7 +217,7 @@ struct AppInfoView: View {
                         } label: {
                             Image(systemName: showResignedInfoPlist ? "checkmark.circle.fill" : "circle")
                                 .font(.subheadline)
-                                .foregroundColor(showResignedInfoPlist ? .blue : .secondary)
+                                .foregroundColor(showResignedInfoPlist ? .accentColor : .secondary)
                         }
                         .buttonStyle(BorderlessButtonStyle())
                     }) {
@@ -294,6 +294,7 @@ struct AppInfoView: View {
             .listStyle(GroupedListStyle())
             #endif
             .navigationTitle("App Details")
+            .settingsAppearance()
             .navigationBarItems(trailing: SwiftUI.Button("Close") {
                 presentationMode.wrappedValue.dismiss()
             })
@@ -407,6 +408,7 @@ struct ProvisioningProfileDetailView: View {
         .listStyle(GroupedListStyle())
         #endif
         .navigationTitle("Profile Details")
+        .settingsAppearance()
         .interactiveDismissDisabled(true)
     }
     
@@ -560,13 +562,14 @@ struct DeviceIDsView: View {
                     UIPasteboard.general.string = udid
                 }) {
                     Image(systemName: "doc.on.doc")
-                        .foregroundColor(.blue)
+                        .foregroundColor(.accentColor)
                 }
                 .buttonStyle(BorderlessButtonStyle())
                 #endif
             }
         }
         .navigationTitle("Device IDs")
+        .settingsAppearance()
         .interactiveDismissDisabled(true)
     }
 }
@@ -719,7 +722,7 @@ struct ExtensionInfoView: View {
                     } label: {
                         Image(systemName: showResignedProfile ? "checkmark.circle.fill" : "circle")
                             .font(.subheadline)
-                            .foregroundColor(showResignedProfile ? .blue : .secondary)
+                            .foregroundColor(showResignedProfile ? .accentColor : .secondary)
                     }
                     .buttonStyle(BorderlessButtonStyle())
                 }) {
@@ -783,7 +786,7 @@ struct ExtensionInfoView: View {
                     } label: {
                         Image(systemName: showResignedInfoPlist ? "checkmark.circle.fill" : "circle")
                             .font(.subheadline)
-                            .foregroundColor(showResignedInfoPlist ? .blue : .secondary)
+                            .foregroundColor(showResignedInfoPlist ? .accentColor : .secondary)
                     }
                     .buttonStyle(BorderlessButtonStyle())
                 }) {
@@ -860,6 +863,7 @@ struct ExtensionInfoView: View {
         .listStyle(GroupedListStyle())
         #endif
         .navigationTitle(appExtension.name)
+        .settingsAppearance()
         .interactiveDismissDisabled(true)
     }
 
@@ -1006,6 +1010,7 @@ struct BundleInspectorView: View {
         .listStyle(GroupedListStyle())
         #endif
         .navigationTitle(displayName)
+        .settingsAppearance()
         .interactiveDismissDisabled(true)
     }
 

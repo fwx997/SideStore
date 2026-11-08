@@ -19,6 +19,7 @@ struct VPNSettingsView: View {
             testSection
         }
         .navigationTitle("VPN Auto-Open")
+        .settingsAppearance()
         .onAppear(perform: refreshInstalledApps)
         .onChange(of: scenePhase) { phase in
             if phase == .active { refreshInstalledApps() }

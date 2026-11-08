@@ -112,6 +112,7 @@ struct AppIDsListView: View {
         .listStyle(GroupedListStyle())
         #endif
         .navigationTitle("App IDs")
+        .settingsAppearance()
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 SwiftUI.Button {
@@ -135,6 +136,7 @@ struct AppIDsListView: View {
                     }
                 }
                 .navigationTitle("Register App ID")
+                .settingsAppearance()
                 .navigationBarItems(
                     leading: SwiftUI.Button("Cancel") {
                         newAppIDName = ""

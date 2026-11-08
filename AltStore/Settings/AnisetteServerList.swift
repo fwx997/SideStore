@@ -571,6 +571,7 @@ struct AnisetteServersView: View {
                     await viewModel.fetchServers(forceRemote: true)
                 }
         .navigationTitle("Anisette Servers")
+        .settingsAppearance()
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarTrailing) {
                 if viewModel.isOfflineMode {

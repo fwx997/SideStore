@@ -79,6 +79,7 @@ struct CertificatesPortalListView: View {
         .listStyle(GroupedListStyle())
         #endif
         .navigationTitle("Certificates")
+        .settingsAppearance()
         .refreshable {
             await viewModel.fetchCertificates(presentingViewController: presentingViewController, isPullToRefresh: true)
         }

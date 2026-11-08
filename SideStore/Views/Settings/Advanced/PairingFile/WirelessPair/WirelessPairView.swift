@@ -138,6 +138,7 @@ struct WirelessPairView: View {
                 .padding(.bottom, 32)
         }
         .navigationTitle("Wireless Pairing")
+        .settingsAppearance()
         #if !os(tvOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif

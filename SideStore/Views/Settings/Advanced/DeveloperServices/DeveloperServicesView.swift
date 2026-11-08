@@ -162,6 +162,7 @@ struct DeveloperServicesView: View {
             }
         }
         .navigationTitle("Developer Portal")
+        .settingsAppearance()
         .onAppear {
             if viewModel.appIDs.isEmpty && viewModel.profiles.isEmpty {
                 Task {

@@ -83,6 +83,7 @@ struct CertificatesView: View {
                 }
             }
             .navigationTitle("Certificates")
+            .settingsAppearance()
             .toolbar {
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
                     SwiftUI.Button {
@@ -178,6 +179,7 @@ struct CertificatesView: View {
                     }
                 }
                 .navigationTitle("Import Failures")
+                .settingsAppearance()
                 #if !os(tvOS)
                 .navigationBarTitleDisplayMode(.inline)
                 #endif
@@ -412,6 +414,7 @@ private struct CreateCertificateSheetView: View {
                 }
             }
             .navigationTitle("New Certificate")
+            .settingsAppearance()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     SwiftUI.Button("Cancel") {

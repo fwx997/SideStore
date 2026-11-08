@@ -149,6 +149,7 @@ struct AppIDDetailView: View {
         .listStyle(GroupedListStyle())
         #endif
         .navigationTitle(currentAppID.name.isEmpty ? "App ID Details" : currentAppID.name)
+        .settingsAppearance()
         .onAppear {
             initializeSelectedGroups()
         }

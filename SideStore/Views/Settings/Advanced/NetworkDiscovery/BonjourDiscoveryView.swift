@@ -41,6 +41,7 @@ struct BonjourDiscoveryView: View {
             }
         }
         .navigationTitle("Discovery")
+        .settingsAppearance()
         #if !os(tvOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -56,7 +57,7 @@ struct BonjourDiscoveryView: View {
                     }
                 } label: {
                     Image(systemName: isAutoRefreshEnabled ? "antenna.radiowaves.left.and.right.circle.fill" : "antenna.radiowaves.left.and.right.circle")
-                        .foregroundColor(isAutoRefreshEnabled ? .blue : .secondary)
+                        .foregroundColor(isAutoRefreshEnabled ? .accentColor : .secondary)
                 }
                 
                 #if !os(tvOS)
@@ -243,6 +244,7 @@ struct ServiceTypesView: View {
             }
         }
         .navigationTitle(domain)
+        .settingsAppearance()
         #if !os(tvOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -258,7 +260,7 @@ struct ServiceTypesView: View {
                     }
                 } label: {
                     Image(systemName: isAutoRefreshEnabled ? "antenna.radiowaves.left.and.right.circle.fill" : "antenna.radiowaves.left.and.right.circle")
-                        .foregroundColor(isAutoRefreshEnabled ? .blue : .secondary)
+                        .foregroundColor(isAutoRefreshEnabled ? .accentColor : .secondary)
                 }
                 
                 #if !os(tvOS)
@@ -489,6 +491,7 @@ struct ServiceInstancesView: View {
             }
         }
         .navigationTitle(friendlyName ?? serviceType)
+        .settingsAppearance()
         #if !os(tvOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -504,7 +507,7 @@ struct ServiceInstancesView: View {
                     }
                 } label: {
                     Image(systemName: isAutoRefreshEnabled ? "antenna.radiowaves.left.and.right.circle.fill" : "antenna.radiowaves.left.and.right.circle")
-                        .foregroundColor(isAutoRefreshEnabled ? .blue : .secondary)
+                        .foregroundColor(isAutoRefreshEnabled ? .accentColor : .secondary)
                 }
                 
                 #if !os(tvOS)
@@ -720,6 +723,7 @@ struct ServiceDetailView: View {
             }
         }
         .navigationTitle("Service Details")
+        .settingsAppearance()
         #if !os(tvOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -735,7 +739,7 @@ struct ServiceDetailView: View {
                     }
                 } label: {
                     Image(systemName: isAutoRefreshEnabled ? "antenna.radiowaves.left.and.right.circle.fill" : "antenna.radiowaves.left.and.right.circle")
-                        .foregroundColor(isAutoRefreshEnabled ? .blue : .secondary)
+                        .foregroundColor(isAutoRefreshEnabled ? .accentColor : .secondary)
                 }
                 
                 #if !os(tvOS)

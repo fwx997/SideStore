@@ -299,6 +299,7 @@ struct ProfilePortalDetailView: View {
         .listStyle(GroupedListStyle())
         #endif
         .navigationTitle(profile.name)
+        .settingsAppearance()
         .refreshable {
             await viewModel.fetchProfiles(presentingViewController: presentingViewController, isPullToRefresh: true)
         }

@@ -37,19 +37,24 @@ final class ErrorLogViewController: UITableViewController
     
     #if !os(tvOS)
     override var preferredStatusBarStyle: UIStatusBarStyle {
-        return .lightContent
+        return .default
     }
     #endif
     
     override func viewDidLoad()
     {
         super.viewDidLoad()
+
+        self.view.tintColor = .altPrimary
+        SettingsPageStyle.system.apply(to: self.navigationItem, tintColor: .altPrimary)
+        self.exportLogButton?.tintColor = .altPrimary
+        self.clearLogButton.tintColor = .altPrimary
         
         self.tableView.dataSource = self.dataSource
         self.dataSource.contentView = self.tableView
         self.tableView.prefetchDataSource = self.dataSource
         
-        self.exportLogButton?.activityIndicatorView.color = .white
+        self.exportLogButton?.activityIndicatorView.color = .altPrimary
         
         if #unavailable(iOS 15)
         {

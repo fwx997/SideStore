@@ -95,7 +95,7 @@ struct AppGroupsListView: View {
                             } label: {
                                 Label("Edit", systemImage: "pencil")
                             }
-                            .tint(.blue)
+                            .tint(.accentColor)
                         }
                         #endif
                         .contextMenu {
@@ -130,6 +130,7 @@ struct AppGroupsListView: View {
         .listStyle(GroupedListStyle())
         #endif
         .navigationTitle("App Groups")
+        .settingsAppearance()
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 SwiftUI.Button {
@@ -155,6 +156,7 @@ struct AppGroupsListView: View {
                     }
                 }
                 .navigationTitle("Create App Group")
+                .settingsAppearance()
                 .navigationBarItems(
                     leading: SwiftUI.Button("Cancel") {
                         showCreateSheet = false
@@ -204,6 +206,7 @@ struct AppGroupsListView: View {
                     }
                 }
                 .navigationTitle("Edit Identifier Configuration")
+                .settingsAppearance()
                 .navigationBarItems(
                     leading: SwiftUI.Button("Cancel") {
                         groupToEdit = nil

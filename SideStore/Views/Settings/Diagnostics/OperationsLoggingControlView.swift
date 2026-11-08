@@ -101,6 +101,7 @@ struct OperationsLoggingControlView: View {
         }
         .background(Color(uiColor: .settingsBackground).ignoresSafeArea())
         .navigationTitle("Operations Logging")
+        .settingsAppearance(.branded)
         #if !os(tvOS)
         .navigationBarTitleDisplayMode(.large)
         #endif

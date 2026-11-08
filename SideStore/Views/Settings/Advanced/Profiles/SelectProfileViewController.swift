@@ -48,7 +48,7 @@ struct ProfileRowItemView: View {
 
                 if isCurrent {
                     Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.blue)
+                        .foregroundColor(.accentColor)
                         .font(.title3)
                 }
             }
@@ -118,19 +118,15 @@ final class SelectProfileViewController: UITableViewController {
             Self.isProfileCompatible($0, for: self.installedApp)
         }
 
-        self.view.backgroundColor = .settingsBackground
-        self.tableView.backgroundColor = .settingsBackground
-
         #if !os(tvOS)
-        let appearance = UINavigationBarAppearance()
-        appearance.configureWithOpaqueBackground()
-        appearance.backgroundColor = .settingsBackground
-        appearance.titleTextAttributes = [.foregroundColor: UIColor.label]
-        self.navigationItem.standardAppearance = appearance
-        self.navigationItem.scrollEdgeAppearance = appearance
+        self.view.backgroundColor = .systemGroupedBackground
+        self.tableView.backgroundColor = .systemGroupedBackground
         #endif
+        self.view.tintColor = .altPrimary
+        SettingsPageStyle.system.apply(to: self.navigationItem, tintColor: .altPrimary)
 
         self.navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .cancel, target: self, action: #selector(cancelTapped))
+        self.navigationItem.leftBarButtonItem?.tintColor = .altPrimary
 
         self.tableView.register(UITableViewCell.self, forCellReuseIdentifier: "ProfileCell")
     }
@@ -195,6 +191,8 @@ final class SelectProfileViewController: UITableViewController {
         if #available(iOS 16.0, tvOS 16.0, *) {
             cell.contentConfiguration = UIHostingConfiguration {
                 ProfileRowItemView(profile: profile, isCurrent: isCurrent, matchingCert: matchingCert)
+                    .tint(Color(uiColor: .altPrimary))
+                    .accentColor(Color(uiColor: .altPrimary))
             }
         } else {
             cell.textLabel?.numberOfLines = 0

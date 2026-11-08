@@ -127,7 +127,7 @@ struct DevicesListView: View {
                             } label: {
                                 Label("Edit", systemImage: "pencil")
                             }
-                            .tint(.blue)
+                            .tint(.accentColor)
                         }
                         #endif
                         .contextMenu {
@@ -168,6 +168,7 @@ struct DevicesListView: View {
         .listStyle(GroupedListStyle())
         #endif
         .navigationTitle("Devices")
+        .settingsAppearance()
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 SwiftUI.Button {
@@ -262,6 +263,7 @@ struct DevicesListView: View {
                     }
                 }
                 .navigationTitle("Register Device")
+                .settingsAppearance()
                 .navigationBarItems(
                     leading: SwiftUI.Button("Cancel") {
                         showRegisterSheet = false
@@ -335,6 +337,7 @@ struct DevicesListView: View {
                     }
                 }
                 .navigationTitle("Edit Device")
+                .settingsAppearance()
                 .navigationBarItems(
                     leading: SwiftUI.Button("Cancel") {
                         deviceToEdit = nil

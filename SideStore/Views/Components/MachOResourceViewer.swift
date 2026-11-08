@@ -139,7 +139,7 @@ struct MachOResourceViewer: View {
                     NavigationLink(destination: ResourceTextViewer(title: "Mach-O Dump", explicitContent: dumpText)) {
                         HStack {
                             Image(systemName: "doc.plaintext.fill")
-                                .foregroundColor(.blue)
+                                .foregroundColor(.accentColor)
                             Text("View Full Mach-O Dump")
                                 .font(.subheadline)
                         }
@@ -185,6 +185,7 @@ struct MachOResourceViewer: View {
         .listStyle(GroupedListStyle())
         #endif
         .navigationTitle(url.lastPathComponent)
+        .settingsAppearance()
         .onAppear {
             guard !isLoaded else { return }
             isLoaded = true

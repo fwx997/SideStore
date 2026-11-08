@@ -254,12 +254,15 @@ public struct InfoPlistCustomizationCoreView: View {
     }
 
     public var body: some View {
-        switch style {
-        case .sheet:
-            sheetBody
-        case .dialog:
-            dialogBody
+        Group {
+            switch style {
+            case .sheet:
+                sheetBody
+            case .dialog:
+                dialogBody
+            }
         }
+        .themeAccent()
     }
 
     private var sheetBody: some View {
@@ -274,6 +277,7 @@ public struct InfoPlistCustomizationCoreView: View {
                 }
             )
             .navigationTitle("Customize Info.plist")
+            .settingsAppearance()
             .navigationBarTitleDisplayMode(.inline)
             .navigationBarItems(
                 leading: SwiftUI.Button("Cancel") {
@@ -570,7 +574,7 @@ public struct InfoPlistCustomizationCoreView: View {
                             Spacer()
                             Image(systemName: appendTeamID ? "checkmark.circle.fill" : "circle")
                                 .font(.system(size: 20))
-                                .foregroundColor(appendTeamID ? .blue : .secondary)
+                                .foregroundColor(appendTeamID ? .accentColor : .secondary)
                         }
                         .contentShape(Rectangle())
                     }
@@ -693,7 +697,7 @@ public struct InfoPlistCustomizationCoreView: View {
                             .foregroundColor(.secondary)
                     }
                 }
-                .toggleStyle(SwitchToggleStyle(tint: .blue))
+                .toggleStyle(SwitchToggleStyle(tint: .accentColor))
                 .padding(.horizontal, 16)
                 .padding(.vertical, 11)
 
@@ -709,7 +713,7 @@ public struct InfoPlistCustomizationCoreView: View {
                             .foregroundColor(.secondary)
                     }
                 }
-                .toggleStyle(SwitchToggleStyle(tint: .blue))
+                .toggleStyle(SwitchToggleStyle(tint: .accentColor))
                 .padding(.horizontal, 16)
                 .padding(.vertical, 11)
             }
@@ -734,7 +738,7 @@ public struct InfoPlistCustomizationCoreView: View {
                         Image(systemName: isShowingRawKeys ? "chevron.up" : "chevron.down")
                             .font(.system(size: 11, weight: .semibold))
                     }
-                    .foregroundColor(.blue)
+                    .foregroundColor(.accentColor)
                     .padding(.trailing, 16)
                 }
             }
@@ -769,7 +773,7 @@ public struct InfoPlistCustomizationCoreView: View {
                                 Text("Add")
                             }
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.blue)
+                            .foregroundColor(.accentColor)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
                         }
@@ -824,8 +828,8 @@ public struct InfoPlistCustomizationCoreView: View {
                     .font(.system(size: 10, weight: .semibold))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(Color.blue.opacity(0.12))
-                    .foregroundColor(.blue)
+                    .background(Color.accentColor.opacity(0.12))
+                    .foregroundColor(.accentColor)
                     .clipShape(Capsule())
 
                 SwiftUI.Button(action: {
@@ -882,7 +886,7 @@ public struct InfoPlistCustomizationCoreView: View {
                     .font(.system(size: 16, weight: .semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(Color.blue)
+                    .background(Color.accentColor)
                     .foregroundColor(.white)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
@@ -924,6 +928,7 @@ public struct InfoPlistCustomizationCoreView: View {
                 }
             }
             .navigationTitle("Add Plist Key")
+            .settingsAppearance()
             .navigationBarItems(
                 leading: SwiftUI.Button("Cancel") {
                     newKeyName = ""

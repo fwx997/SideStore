@@ -63,12 +63,15 @@ public struct EntitlementsCustomizationCoreView: View {
     }
 
     public var body: some View {
-        switch style {
-        case .sheet:
-            sheetBody
-        case .dialog:
-            dialogBody
+        Group {
+            switch style {
+            case .sheet:
+                sheetBody
+            case .dialog:
+                dialogBody
+            }
         }
+        .themeAccent()
     }
 
     private var sheetBody: some View {
@@ -83,6 +86,7 @@ public struct EntitlementsCustomizationCoreView: View {
                 }
             )
             .navigationTitle("Customize Entitlements")
+            .settingsAppearance()
             .navigationBarTitleDisplayMode(.inline)
             .navigationBarItems(
                 leading: SwiftUI.Button("Cancel") {
@@ -678,6 +682,7 @@ public struct EntitlementsCustomizationCoreView: View {
                 }
             }
             .navigationTitle("Add Entitlement")
+            .settingsAppearance()
             .navigationBarTitleDisplayMode(.inline)
             .navigationBarItems(
                 leading: SwiftUI.Button("Cancel") {

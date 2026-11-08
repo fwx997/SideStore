@@ -140,6 +140,7 @@ struct InfoPlistContainerView: View {
             }
         }
         .navigationTitle(title)
+        .settingsAppearance()
         #if !os(tvOS)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

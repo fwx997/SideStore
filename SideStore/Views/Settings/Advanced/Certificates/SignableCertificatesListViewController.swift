@@ -43,7 +43,7 @@ struct SignableCertificateRowView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(cert.machineName ?? cert.name)
                     .font(.headline)
-                    .foregroundColor(.white)
+                    .foregroundColor(.primary)
                 
                 let certName = cert.name
                 if cert.machineName != nil {
@@ -51,21 +51,21 @@ struct SignableCertificateRowView: View {
                         Text("Name: ").font(.system(size: 10))
                         + Text(certName).font(.system(size: 10))
                     )
-                    .foregroundColor(Color(uiColor: .lightGray))
+                    .foregroundColor(.secondary)
                 }
                 
                 (
                     Text("Serial: ").font(.system(size: 11))
                     + Text(cert.serialNumber).font(.system(size: 11, design: .monospaced))
                 )
-                .foregroundColor(Color(uiColor: .lightGray))
+                .foregroundColor(.secondary)
                 
                 if let ident = cert.identifier, !ident.isEmpty {
                     (
                         Text("ID: ").font(.system(size: 10))
                         + Text(ident).font(.system(size: 10, design: .monospaced))
                     )
-                    .foregroundColor(Color(uiColor: .lightGray))
+                    .foregroundColor(.secondary)
                 }
                 
                 if let brief = briefInfo {
@@ -73,13 +73,13 @@ struct SignableCertificateRowView: View {
                         Text("Type: ").font(.system(size: 10))
                         + Text(brief.type).font(.system(size: 10))
                     )
-                    .foregroundColor(Color(uiColor: .lightGray))
+                    .foregroundColor(.secondary)
                     
                     (
                         Text("Validity: ").font(.system(size: 10))
                         + Text("\(brief.validFrom) - \(brief.validUntil)").font(.system(size: 10))
                     )
-                    .foregroundColor(Color(uiColor: .lightGray))
+                    .foregroundColor(.secondary)
                 }
                 
                 if let req = cert.requesterEmail, !req.isEmpty {
@@ -87,21 +87,21 @@ struct SignableCertificateRowView: View {
                         Text("Requester: ").font(.system(size: 10))
                         + Text(req).font(.system(size: 10))
                     )
-                    .foregroundColor(Color(uiColor: .lightGray))
+                    .foregroundColor(.secondary)
                 }
                 
                 (
                     Text("Keys: ").font(.system(size: 10))
                     + Text("public + private").font(.system(size: 10))
                 )
-                .foregroundColor(Color(uiColor: .lightGray))
+                .foregroundColor(.secondary)
                 
                 if let status = statusText {
                     (
                         Text("Status: ").font(.system(size: 10))
                         + Text(status).font(.system(size: 10, weight: .bold))
                     )
-                    .foregroundColor(isAppCert ? .green : .cyan)
+                    .foregroundColor(isAppCert ? .accentColor : .cyan)
                 }
             }
             
@@ -109,7 +109,7 @@ struct SignableCertificateRowView: View {
             
             if isAppCert {
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundColor(.green)
+                    .foregroundColor(.accentColor)
                     .font(.title3)
             }
         }
@@ -144,20 +144,15 @@ final class SignableCertificatesListViewController: UITableViewController {
         self.title = NSLocalizedString("Set Certificate", comment: "")
         self.certificates = viewModel.loadAllSignableLocalCertificates()
         
-        self.view.backgroundColor = .settingsBackground
-        self.tableView.backgroundColor = .settingsBackground
-        
         #if !os(tvOS)
-        let appearance = UINavigationBarAppearance()
-        appearance.configureWithOpaqueBackground()
-        appearance.backgroundColor = .settingsBackground
-        appearance.titleTextAttributes = [.foregroundColor: UIColor.white]
-        self.navigationItem.standardAppearance = appearance
-        self.navigationItem.scrollEdgeAppearance = appearance
+        self.view.backgroundColor = .systemGroupedBackground
+        self.tableView.backgroundColor = .systemGroupedBackground
         #endif
+        self.view.tintColor = .altPrimary
+        SettingsPageStyle.system.apply(to: self.navigationItem, tintColor: .altPrimary)
         
         self.navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .cancel, target: self, action: #selector(cancelTapped))
-        self.navigationItem.leftBarButtonItem?.tintColor = .white
+        self.navigationItem.leftBarButtonItem?.tintColor = .altPrimary
         
         self.tableView.register(UITableViewCell.self, forCellReuseIdentifier: "CertCell")
     }
@@ -208,8 +203,8 @@ final class SignableCertificatesListViewController: UITableViewController {
         if #available(iOS 16.0, tvOS 16.0, *) {
             cell.contentConfiguration = UIHostingConfiguration {
                 SignableCertificateRowView(cert: cert, appName: installedApp.name, appCertSerial: installedApp.certificateSerialNumber, viewModel: viewModel)
+                    .themeAccent()
             }
-            .background(Color.white.opacity(0.15))
         } else {
             let certName = cert.name
             let machineName = cert.machineName ?? "N/A"
@@ -227,11 +222,10 @@ final class SignableCertificatesListViewController: UITableViewController {
             Requester: \(cert.requesterEmail ?? "N/A")
             Keys: public + private
             """
-            cell.textLabel?.textColor = .white
+            cell.textLabel?.textColor = .label
             cell.textLabel?.font = .systemFont(ofSize: 12, weight: .regular)
-            cell.backgroundColor = UIColor.white.withAlphaComponent(0.15)
             cell.accessoryType = isCurrent ? .checkmark : .none
-            cell.tintColor = .green
+            cell.tintColor = .altPrimary
         }
         
         return cell

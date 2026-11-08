@@ -89,6 +89,7 @@ struct ExperimentalFeaturesView: View {
         }
         .background(Color(uiColor: .settingsBackground).ignoresSafeArea())
         .navigationTitle("Experimental Features")
+        .settingsAppearance(.branded)
         #if !os(tvOS)
         .navigationBarTitleDisplayMode(.large)
         #endif

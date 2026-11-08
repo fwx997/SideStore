@@ -103,6 +103,7 @@ struct PrivateKeyTextInputView: View {
                 .padding(.bottom)
             }
             .navigationTitle("Add Private Key")
+            .settingsAppearance()
             #if !os(tvOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif

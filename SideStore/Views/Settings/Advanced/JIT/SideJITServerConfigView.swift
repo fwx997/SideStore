@@ -98,6 +98,7 @@ struct SideJITServerConfigView: View {
         .listStyle(.grouped)
         #endif
         .navigationTitle("SideJITServer")
+        .settingsAppearance()
         .overlay(
             Group {
                 if showCopiedToast {
