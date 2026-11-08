@@ -167,8 +167,7 @@ private extension RefreshAllAppsIntent
 
         try session.dispatch {
             let operation = try AppManager.shared.backgroundRefresh(
-                // Enable final notifications before dispatch, including a result racing the deadline.
-                installedApps, presentsNotifications: true,
+                installedApps, presentsNotifications: self.presentsNotifications,
                 ignoresServerNotFoundError: false
             ) { result in
                 session.finish(Self.refreshResult(result))

@@ -1075,6 +1075,10 @@ extension SettingsViewController
         let cell = InsetGroupTableViewCell(style: .default, reuseIdentifier: nil)
         cell.style = .middle
         cell.isSelectable = true
+        // Match AccountVerificationRow so the inset background shows the current theme.
+        cell.backgroundColor = .clear
+        cell.contentView.backgroundColor = .clear
+        cell.backgroundConfiguration = .clear()
         cell.textLabel?.text = NSLocalizedString("VPN Auto-Open", comment: "")
         cell.textLabel?.textColor = .white
         cell.textLabel?.font = .boldSystemFont(ofSize: 17)

@@ -15,7 +15,7 @@ struct RefreshAllAppsWidgetIntent: AppIntent, ProgressReportingIntent
     static var isDiscoverable: Bool { false } // Don't show in Shortcuts or Spotlight.
     
     #if !WIDGET_EXTENSION
-    private let intent = RefreshAllAppsIntent(presentsNotifications: true)
+    private let intent = RefreshAllAppsIntent()
     #endif
     
     func perform() async throws -> some IntentResult

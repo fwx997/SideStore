@@ -8,7 +8,7 @@ enum BackgroundRefreshPendingError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .stillRunning:
-            return NSLocalizedString("Refresh is still running in the background. Keep the VPN connected and check the final notification. Refresh has not been confirmed yet.", comment: "")
+            return NSLocalizedString("Refresh is still running in the background. Keep the VPN connected and check Refresh Attempts in Settings for the final result. Refresh has not been confirmed yet.", comment: "")
         case .notStarted:
             return NSLocalizedString("Refresh could not start before the shortcut timed out. No refresh was started. Keep the VPN connected and try again.", comment: "")
         }

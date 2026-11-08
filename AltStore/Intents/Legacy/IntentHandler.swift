@@ -78,11 +78,9 @@ final class IntentHandler: NSObject, RefreshAllIntentHandling
         else
         {
             self.queue.asyncAfter(deadline: .now() + 7.0) {
-                if let operation = self.operations[intent]
+                if self.operations[intent] != nil
                 {
-                    // We took too long to finish and return the final result,
-                    // so we'll now present a normal notification when finished.
-                    operation.presentsFinishedNotification = true
+                    // Keep the refresh silent even when it outlives the shortcut.
                     Task {
                         if await isMinimuxerReady().isSuccess {
                             self.finish(intent, response: RefreshAllIntentResponse(code: .success, userActivity: nil))

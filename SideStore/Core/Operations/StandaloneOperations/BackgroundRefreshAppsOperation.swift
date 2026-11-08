@@ -35,7 +35,7 @@ private let ReceivedApplicationState: @convention(c) (CFNotificationCenter?, Uns
 final class BackgroundRefreshAppsOperation: BaseStandaloneOperation<OperationContext, [String: Result<InstalledApp, Error>]>, @unchecked Sendable {
     let installedApps: [InstalledApp]
     
-    var presentsFinishedNotification: Bool = true
+    var presentsFinishedNotification: Bool = false
     var ignoresServerNotFoundError: Bool = true
     
     private let refreshIdentifier: String = UUID().uuidString
