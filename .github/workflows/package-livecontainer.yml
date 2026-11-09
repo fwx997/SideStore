@@ -10,6 +10,11 @@ on:
         description: Exact LiveContainer fork commit to build
         required: true
         type: string
+      package_only:
+        description: Compile and package only; device testing is performed separately
+        required: false
+        default: false
+        type: boolean
       runner:
         description: xcode-27 uses Xcode 27.2; other runners use Xcode 26.2
         required: true
@@ -26,6 +31,7 @@ permissions:
 
 jobs:
   regressions:
+    if: ${{ !inputs.package_only }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -56,9 +62,11 @@ jobs:
       - name: Install build tools
         run: brew install ldid xcbeautify
       - name: Test LiveContainer callbacks and background refresh before building
+        if: ${{ !inputs.package_only }}
         working-directory: LiveContainer-build
         run: python3 .github/tests/test_background_refresh.py --require-swift -v
       - name: Test SideStore signing, recovery, and background refresh
+        if: ${{ !inputs.package_only }}
         run: |
           swiftc --version
           python3 -m unittest discover -s scripts/tests -v
@@ -81,11 +89,12 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild archive -archivePath archive -scheme LiveContainer -project LiveContainer.xcodeproj -sdk iphoneos -arch arm64 -configuration Release 2>&1 | tee build.log | xcbeautify --renderer github-actions
-      - name: Test and package LiveContainer with this SideStore build
+      - name: Package LiveContainer with this SideStore build
         working-directory: LiveContainer-build
         env:
           scheme: LiveContainer
           archive_path: archive
+          LC_PACKAGE_ONLY: ${{ inputs.package_only && '1' || '0' }}
         run: |
           export SIDESTORE_IPA_PATH="$GITHUB_WORKSPACE/SideStore.ipa"
           sh .github/build_github.sh
