@@ -19,11 +19,12 @@ struct AnisetteProvisioningDiagnostics {
         let report = URL(fileURLWithPath: try #require(environment["ANISETTE_DIAGNOSTIC_REPORT"]))
         let original = AnisetteConstants.defaultClientInfo
         let corrected = original.replacingOccurrences(of: "<macOS;", with: "<Mac OS X;")
-        var observations: [Observation] = []
-        for (label, clientInfo) in [("original", original), ("Mac OS X", corrected)] {
-            observations.append(await probeLoginHeader(label: label, clientInfo: clientInfo))
-            observations.append(await probeProvisioning(label: label, clientInfo: clientInfo, libraries: libraries))
-        }
+        // A failed native ADI session can survive in process globals. Give each
+        // comparison a separate test process, just as a fresh app launch would.
+        let label = try #require(environment["ANISETTE_DIAGNOSTIC_VARIANT"])
+        let clientInfo = label == "original" ? original : corrected
+        var observations = [await probeLoginHeader(label: label, clientInfo: clientInfo)]
+        observations.append(await probeProvisioning(label: label, clientInfo: clientInfo, libraries: libraries))
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(observations).write(to: report, options: .atomic)
@@ -61,8 +62,12 @@ struct AnisetteProvisioningDiagnostics {
             return Observation(variant: label, phase: "provisioning", outcome: valid ? "success" : "missing-output", status: nil)
         } catch AnisetteError.httpError(let status, let message) {
             return Observation(variant: label, phase: "provisioning", outcome: message, status: status)
+        } catch AnisetteError.adiError(let code, _) {
+            return Observation(variant: label, phase: "provisioning", outcome: "ADI native error", status: Int(code))
+        } catch AnisetteError.readFailure {
+            return Observation(variant: label, phase: "provisioning", outcome: "generated-blob-read-failure", status: nil)
         } catch {
-            return Observation(variant: label, phase: "provisioning", outcome: "non-http-error", status: (error as NSError).code)
+            return Observation(variant: label, phase: "provisioning", outcome: String(reflecting: type(of: error)), status: (error as NSError).code)
         }
     }
 }
