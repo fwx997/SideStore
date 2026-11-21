@@ -15,6 +15,11 @@ on:
         required: false
         default: false
         type: boolean
+      anisette_diagnostics:
+        description: Run account-free Anisette initialization diagnostics only
+        required: false
+        default: false
+        type: boolean
       runner:
         description: xcode-27 uses Xcode 27.2; other runners use Xcode 26.2
         required: true
@@ -31,7 +36,7 @@ permissions:
 
 jobs:
   regressions:
-    if: ${{ !inputs.package_only }}
+    if: ${{ !inputs.package_only && !inputs.anisette_diagnostics }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -43,6 +48,7 @@ jobs:
           swiftc --version
           python3 -m unittest discover -s scripts/tests -v
   package:
+    if: ${{ !inputs.anisette_diagnostics }}
     runs-on: ${{ inputs.runner || 'xcode-27' }}
     timeout-minutes: 90
     steps:
@@ -114,3 +120,34 @@ jobs:
           path: |
             build/logs/build.log
             LiveContainer-build/build.log
+  anisette-diagnostics:
+    if: ${{ inputs.anisette_diagnostics }}
+    runs-on: xcode-27
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: mahee96/AnisetteKit
+          ref: db8b41022697b6c19be8a5f01a1ce834145a2a26
+          path: AnisetteKit-diagnostics
+      - uses: maxim-lobanov/setup-xcode@v1.6.0
+        with:
+          xcode-version: '27.2'
+      - name: Prepare the existing ODA library payload
+        run: python3 scripts/diagnostics/prepare_oda.py AnisetteKit-diagnostics/DiagnosticLibraries
+      - name: Run bounded initialization probes without an Apple account
+        working-directory: AnisetteKit-diagnostics
+        run: |
+          set -o pipefail
+          cp ../scripts/diagnostics/AnisetteProvisioningDiagnostics.swift Tests/AnisetteKitTests/
+          export ANISETTE_DIAGNOSTIC_LIBS="$PWD/DiagnosticLibraries"
+          export ANISETTE_DIAGNOSTIC_REPORT="$GITHUB_WORKSPACE/anisette-diagnostics.json"
+          swift test --filter AnisetteProvisioningDiagnostics 2>&1 | tee ../anisette-diagnostics.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: anisette-initialization-diagnostics
+          path: |
+            anisette-diagnostics.json
+            anisette-diagnostics.log
