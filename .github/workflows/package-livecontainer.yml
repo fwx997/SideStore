@@ -88,6 +88,9 @@ jobs:
         working-directory: LiveContainer-build
         run: |
           set -o pipefail
+          if [ -f .github/prepare_dependencies.sh ]; then
+            sh .github/prepare_dependencies.sh
+          fi
           xcodebuild archive -archivePath archive -scheme LiveContainer -project LiveContainer.xcodeproj -sdk iphoneos -arch arm64 -configuration Release 2>&1 | tee build.log | xcbeautify --renderer github-actions
       - name: Package LiveContainer with this SideStore build
         working-directory: LiveContainer-build
