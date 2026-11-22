@@ -85,8 +85,8 @@ final class CacheResignedMetadataOperation: BasePipelineOperation<InstallAppOper
         let validEntitlementIDs = Set(targetAppBundle.allAppBundles.map { $0.bundleIdentifier })
         cleanupStaleFiles(in: entitlementsDirectory, matchingExtension: "plist", validIDs: validEntitlementIDs, description: "Entitlements")
         
-        // Cache what each executable actually contains, including memory keys
-        // absent from the profile. Refresh and reinstall reuse this metadata.
+        // Cache what each executable actually contains after profile filtering.
+        // Refresh and reinstall must not revive an unapproved memory request.
         for bundle in targetAppBundle.allAppBundles {
             let resignedID = bundle.bundleIdentifier
             let fileURL = entitlementsDirectory.appendingPathComponent("\(resignedID).plist")

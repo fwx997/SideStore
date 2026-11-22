@@ -36,26 +36,27 @@ diff --git a/Sources/CodeSigning/CodeSignerAPI.swift b/Sources/CodeSigning/CodeS
  
              for (key, _) in filteredEntitlements {
                  if let applicationValue = applicationEntitlements[key] {
-@@ -122,6 +132,12 @@
+@@ -122,6 +132,13 @@
                  }
              }
  
 +            filteredEntitlements = try MemoryEntitlements.applying(
 +                requested: applicationEntitlements,
-+                to: filteredEntitlements
++                to: filteredEntitlements,
++                authorizedBy: matchedProfile.entitlements
 +            )
 +            memoryEntitlementsByURL[app.fileURL.resolvingSymlinksInPath()] =
 +                MemoryEntitlements.values(in: filteredEntitlements)
              verboseLog("[SideSign] Filtered entitlements for signing: \(filteredEntitlements)")
  
              let plist = try PropertyListSerialization.data(
-@@ -213,6 +229,15 @@
+@@ -213,6 +230,15 @@
                  }
              )
  
 +            // Read the executable again: a successful signing call alone does not
 +            // prove that the requested entitlements reached its code signature.
-+            for (url, expected) in memoryEntitlementsByURL where !expected.isEmpty {
++            for (url, expected) in memoryEntitlementsByURL {
 +                guard let signedApp = AppBundle(fileURL: url) else {
 +                    throw SignerError.invalidApp(cause: "Could not inspect the signed executable.")
 +                }
@@ -69,13 +70,12 @@ diff --git a/Sources/CodeSigning/MemoryEntitlements.swift b/Sources/CodeSigning/
 new file mode 100644
 --- /dev/null
 +++ b/Sources/CodeSigning/MemoryEntitlements.swift
-@@ -0,0 +1,53 @@
+@@ -0,0 +1,59 @@
 +import Foundation
 +import CoreFoundation
 +
-+/// The increased-memory request belongs to each executable's signature. It must
-+/// not disappear merely because the profile does not repeat this optional key.
-+/// iOS still decides whether the signed app and its memory request are supported.
++/// Keep each executable's memory selection within its profile's authorization.
++/// A request in an IPA or in the customization UI is not a provisioning grant.
 +public enum MemoryEntitlements {
 +    public static let keys: Set<String> = [
 +        "com.apple.developer.kernel.increased-memory-limit"
@@ -87,7 +87,8 @@ new file mode 100644
 +
 +    public static func applying(
 +        requested: [String: any Sendable],
-+        to entitlements: [String: any Sendable]
++        to entitlements: [String: any Sendable],
++        authorizedBy profile: [String: any Sendable]
 +    ) throws -> [String: any Sendable] {
 +        var result = entitlements
 +        for key in keys.sorted() {
@@ -95,7 +96,13 @@ new file mode 100644
 +                result.removeValue(forKey: key)
 +                continue
 +            }
-+            result[key] = try boolean(value, key: key)
++            let requestedValue = try boolean(value, key: key)
++            guard let granted = profile[key], try boolean(granted, key: key) else {
++                result.removeValue(forKey: key)
++                debugLog("[SideSign] Omitting memory entitlement '\(key)': the provisioning profile does not authorize it.")
++                continue
++            }
++            result[key] = requestedValue
 +        }
 +        return result
 +    }
@@ -104,12 +111,12 @@ new file mode 100644
 +        expected: [String: any Sendable],
 +        actual: [String: any Sendable]
 +    ) throws {
-+        for (key, value) in values(in: expected) {
-+            let requested = try boolean(value, key: key)
-+            guard let actualValue = actual[key],
-+                  try boolean(actualValue, key: key) == requested else {
++        for key in keys.sorted() {
++            let expectedValue = try expected[key].map { try boolean($0, key: key) }
++            let actualValue = try actual[key].map { try boolean($0, key: key) }
++            guard actualValue == expectedValue else {
 +                throw SignerError.invalidApp(
-+                    cause: "The signed executable did not retain the requested memory entitlement '\(key)'."
++                    cause: "The signed executable did not retain the profile-authorized memory entitlement '\(key)'."
 +                )
 +            }
 +        }

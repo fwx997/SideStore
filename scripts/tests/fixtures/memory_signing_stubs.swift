@@ -1,6 +1,17 @@
 import Foundation
 
-public struct Team: Sendable {}
+public enum TeamType: Sendable {
+    case free, paid
+
+    var allowedFeatures: Set<Feature>? {
+        self == .free ? Feature.freeFeatures : Feature.paidFeatures
+    }
+}
+
+public struct Team: Sendable {
+    let type: TeamType
+    init(type: TeamType = .free) { self.type = type }
+}
 public struct KeyStore: Sendable {
     public func exportP12() throws -> Data { Data("test key store".utf8) }
 }
@@ -51,6 +62,7 @@ public struct AppBundle: Hashable, Sendable {
 
 public enum CodeSigner {
     nonisolated(unsafe) static var dropMemory = false
+    nonisolated(unsafe) static var injectMemory = false
     nonisolated(unsafe) static var calls = 0
 
     public static func sign(
@@ -70,6 +82,9 @@ public enum CodeSigner {
                 from: Data(xml.utf8), format: nil
             ) as! [String: any Sendable]
             values = dropMemory ? withoutMemory(values) : values
+            if injectMemory {
+                values[Entitlement.increasedMemoryLimit.rawValue] = true
+            }
             try writePlist(values, to: bundle.fileURL.appendingPathComponent("Signature.plist"))
             progress()
         }
@@ -86,8 +101,29 @@ func writePlist(_ value: Any, to url: URL) throws {
 }
 
 typealias ALTApplication = AppBundle
-struct ALTEntitlement: Hashable {
-    let rawValue: String
+typealias ALTEntitlement = Entitlement
+typealias ALTFeature = Feature
+typealias ALTTeam = Team
+
+struct ALTAppID: Sendable {
+    let bundleIdentifier: String
+    var features: [Feature: String]
+}
+
+enum OperationError: Error {
+    case invalidParameters(String)
+}
+
+enum AppConstants {
+    static let mandatoryFeatures: Set<Feature> = [.appGroups]
+}
+
+actor DeveloperPortalProxy {
+    static let shared = DeveloperPortalProxy()
+
+    func updateAppID(_ appID: ALTAppID, team: ALTTeam) async throws -> ALTAppID {
+        appID
+    }
 }
 final class InstalledExtension {
     let bundleIdentifier: String

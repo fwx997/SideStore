@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 
 private let memory = "com.apple.developer.kernel.increased-memory-limit"
 private let addressing = "com.apple.developer.kernel.extended-virtual-addressing"
@@ -9,7 +10,12 @@ func expect(_ actual: Bool?, _ expected: Bool?, _ label: String) {
     precondition(actual == expected, "\(label): expected \(String(describing: expected)), got \(String(describing: actual))")
 }
 
-func fixture(at root: URL, original: [String: any Sendable]) throws -> (AppBundle, [ProvisioningProfile]) {
+func fixture(
+    at root: URL,
+    original: [String: any Sendable],
+    memoryGrant: Bool? = true,
+    helperMemoryGrant: Bool? = true
+) throws -> (AppBundle, [ProvisioningProfile]) {
     let appURL = root.appendingPathComponent("Test.app")
     let helperURL = appURL.appendingPathComponent("PlugIns/Helper.appex")
     try FileManager.default.createDirectory(at: helperURL, withIntermediateDirectories: true)
@@ -18,11 +24,17 @@ func fixture(at root: URL, original: [String: any Sendable]) throws -> (AppBundl
     try writePlist(original, to: appURL.appendingPathComponent("Signature.plist"))
     try writePlist(["get-task-allow": true], to: helperURL.appendingPathComponent("Signature.plist"))
     let profiles = [mainID, helperID].map { identifier in
-        ProvisioningProfile(
+        var entitlements: [String: any Sendable] = [
+            "application-identifier": "TESTTEAM." + identifier, "get-task-allow": true
+        ]
+        if let grant = identifier == mainID ? memoryGrant : helperMemoryGrant {
+            entitlements[memory] = grant
+        }
+        return ProvisioningProfile(
             name: "Test profile",
             bundleIdentifier: identifier,
             teamIdentifier: "TESTTEAM",
-            entitlements: ["application-identifier": "TESTTEAM." + identifier, "get-task-allow": true],
+            entitlements: entitlements,
             data: Data(("unchanged profile bytes: " + identifier).utf8)
         )
     }
@@ -103,6 +115,7 @@ func repeatedRefresh(_ root: URL) async throws {
     let routing = RoutingOperation()
     routing.context.installedApp = installed
     let cache = MetadataOperation()
+    routing.context.additionalEntitlements = OperationEntitlements.defaultAdditionalEntitlements
     for round in 1...5 {
         let request = routing.requestedEntitlements(for: app, identifier: "com.example.vm", resignedIdentifier: mainID)!
         try await signer.signApp(
@@ -126,7 +139,7 @@ func routingChoices(_ root: URL) throws {
     installed.appExtensions = [InstalledExtension(helperID, entitlements: [addressing: true])]
     operation.context.installedApp = installed
     operation.context.customEntitlementsByBundleID["com.example.vm"] = [memory: false]
-    operation.context.additionalEntitlements[ALTEntitlement(rawValue: memory)] = false
+    operation.context.additionalEntitlements = OperationEntitlements.defaultAdditionalEntitlements
     let main = operation.requestedEntitlements(for: app, identifier: "com.example.vm", resignedIdentifier: mainID)!
     expect(main[memory] as? Bool, false, "explicit choice overrides cached preference after rename")
     let helper = operation.requestedEntitlements(
@@ -151,7 +164,7 @@ func rejectLostSignature(_ root: URL) async throws {
 func rejectInvalidValues(_ root: URL) async throws {
     let (app, profiles) = try fixture(at: root, original: [:])
     let signer = AppBundleSigner(team: Team(), keyStore: KeyStore())
-    let invalidValues: [any Sendable] = ["true", 1, 0]
+    let invalidValues: [any Sendable] = ["true", 1, 0, 1.0, ALTEntitlement.increasedMemoryLimit]
     for value in invalidValues {
         do {
             try await signer.signApp(
@@ -163,6 +176,119 @@ func rejectInvalidValues(_ root: URL) async throws {
         }
     }
     precondition(CodeSigner.calls == 0, "Malformed requests reached the signing backend")
+}
+
+func defaultInstallation(_ root: URL) async throws {
+    let defaults = OperationEntitlements.defaultAdditionalEntitlements
+    precondition(!defaults.isEmpty, "The real installation defaults must be exercised")
+    for (_, value) in defaults {
+        let number = value as! NSNumber
+        precondition(CFGetTypeID(number) == CFBooleanGetTypeID(), "A default request is not a Boolean")
+    }
+    for grant in [nil, false, true] as [Bool?] {
+        let (app, profiles) = try fixture(at: root, original: [:], memoryGrant: grant)
+        let routing = RoutingOperation()
+        routing.context.additionalEntitlements = defaults
+        let request = routing.requestedEntitlements(for: app, identifier: mainID, resignedIdentifier: mainID)!
+        try await AppBundleSigner(team: Team(), keyStore: KeyStore()).signApp(
+            at: app.fileURL, provisioningProfiles: profiles, customEntitlements: [mainID: request]
+        )
+        expect(app.entitlements[memory] as? Bool, grant == true ? true : nil, "default install respects the profile")
+        expect(app.appExtensions.first!.entitlements[memory] as? Bool, nil, "default install isolates extensions")
+    }
+}
+
+func defaultChoices(_ root: URL) async throws {
+    let (app, profiles) = try fixture(at: root, original: [memory: true])
+    let signer = AppBundleSigner(team: Team(), keyStore: KeyStore())
+    let installed = InstalledApp(directoryURL: root)
+    installed.customEntitlements = [memory: true]
+    let routing = RoutingOperation()
+    routing.context.installedApp = installed
+    routing.context.additionalEntitlements = OperationEntitlements.defaultAdditionalEntitlements
+    for choice in [false, nil] as [Bool?] {
+        let selected: [String: any Sendable] = choice.map { [memory: $0] } ?? [:]
+        routing.context.customEntitlementsByBundleID[mainID] = selected
+        let request = routing.requestedEntitlements(for: app, identifier: mainID, resignedIdentifier: mainID)!
+        try await signer.signApp(at: app.fileURL, provisioningProfiles: profiles, customEntitlements: [mainID: request])
+        expect(app.entitlements[memory] as? Bool, choice, "explicit choice survives automatic defaults")
+        routing.context.customEntitlementsByBundleID = [:]
+        installed.customEntitlements = selected
+        let cached = routing.requestedEntitlements(for: app, identifier: mainID, resignedIdentifier: mainID)!
+        expect(cached[memory] as? Bool, choice, "cached choice survives automatic defaults")
+    }
+    routing.context.installedApp = nil
+    try writePlist([memory: false], to: app.fileURL.appendingPathComponent("Signature.plist"))
+    let original = routing.requestedEntitlements(for: app, identifier: mainID, resignedIdentifier: mainID)!
+    expect(original[memory] as? Bool, false, "original false survives automatic defaults")
+}
+
+func profileBoundary(_ root: URL) async throws {
+    let signer = AppBundleSigner(team: Team(), keyStore: KeyStore())
+    for grant in [nil, false, true] as [Bool?] {
+        let helperGrant: Bool? = grant == true ? nil : true
+        let (app, profiles) = try fixture(
+            at: root, original: [memory: true], memoryGrant: grant, helperMemoryGrant: helperGrant
+        )
+        try await signer.signApp(
+            at: app.fileURL, provisioningProfiles: profiles,
+            customEntitlements: [mainID: [memory: true], helperID: [memory: true]]
+        )
+        expect(app.entitlements[memory] as? Bool, grant == true ? true : nil, "main profile boundary")
+        expect(app.appExtensions.first!.entitlements[memory] as? Bool, helperGrant, "helper profile boundary")
+    }
+    let (app, profiles) = try fixture(at: root, original: [memory: true], memoryGrant: nil)
+    let legacy: any CodeSignerAPI = signer
+    try await legacy.signApp(at: app.fileURL, provisioningProfiles: profiles, progress: nil)
+    expect(app.entitlements[memory] as? Bool, nil, "legacy API also filters unapproved memory")
+}
+
+func revokedGrant(_ root: URL) async throws {
+    let (app, profiles) = try fixture(at: root, original: [memory: true], memoryGrant: nil)
+    let installed = InstalledApp(directoryURL: root.appendingPathComponent("Metadata"))
+    installed.customEntitlements = [memory: true]
+    let routing = RoutingOperation()
+    routing.context.installedApp = installed
+    routing.context.additionalEntitlements = OperationEntitlements.defaultAdditionalEntitlements
+    let request = routing.requestedEntitlements(for: app, identifier: mainID, resignedIdentifier: mainID)!
+    try await AppBundleSigner(team: Team(), keyStore: KeyStore()).signApp(
+        at: app.fileURL, provisioningProfiles: profiles, customEntitlements: [mainID: request]
+    )
+    try MetadataOperation().cacheEntitlements(for: installed, targetAppBundle: app)
+    let data = try Data(contentsOf: installed.directoryURL.appendingPathComponent("Entitlements/" + mainID + ".plist"))
+    installed.customEntitlements = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: any Sendable]
+    expect(installed.customEntitlements?[memory] as? Bool, nil, "cache contains no unapproved request")
+    let refreshed = routing.requestedEntitlements(for: app, identifier: mainID, resignedIdentifier: mainID)!
+    expect(refreshed[memory] as? Bool, nil, "defaults do not revive a filtered cached request")
+}
+
+func rejectInjectedSignature(_ root: URL) async throws {
+    let (app, profiles) = try fixture(at: root, original: [memory: true], memoryGrant: nil)
+    CodeSigner.injectMemory = true
+    do {
+        try await AppBundleSigner(team: Team(), keyStore: KeyStore()).signApp(
+            at: app.fileURL, provisioningProfiles: profiles, progress: nil
+        )
+        preconditionFailure("An unapproved memory request was reported as successful")
+    } catch SignerError.invalidApp(let cause) {
+        precondition(cause.contains("profile-authorized"), cause)
+    }
+}
+
+func profileFeatures(_ root: URL) async throws {
+    let (app, _) = try fixture(at: root, original: [:])
+    let operation = FeatureOperation()
+    operation.context.additionalEntitlements = OperationEntitlements.defaultAdditionalEntitlements
+    let initial = ALTAppID(bundleIdentifier: mainID, features: [.appGroups: "true"])
+    let paid = try await operation.updateFeatures(for: initial, targetAppBundle: app, team: Team(type: .paid))
+    precondition(paid.features[.increasedMemoryLimit] == "true", "An allowed memory capability was not requested")
+    let free = try await operation.updateFeatures(for: initial, targetAppBundle: app, team: Team(type: .free))
+    precondition(free.features[.increasedMemoryLimit] == nil, "The free-team capability filter was bypassed")
+    let helper = try await operation.updateFeatures(for: initial, targetAppBundle: app.appExtensions.first!, team: Team(type: .paid))
+    precondition(helper.features[.increasedMemoryLimit] == nil, "Main-app defaults leaked into helper provisioning")
+    operation.context.customEntitlementsByBundleID[mainID] = [memory: false]
+    let disabled = try await operation.updateFeatures(for: paid, targetAppBundle: app, team: Team(type: .paid))
+    precondition(disabled.features[.increasedMemoryLimit] == "false", "Defaults re-enabled an explicit disabled capability")
 }
 
 @main
@@ -180,6 +306,12 @@ struct MemorySigningRegression {
         case "routing": try routingChoices(root)
         case "lost": try await rejectLostSignature(root)
         case "invalid": try await rejectInvalidValues(root)
+        case "defaults": try await defaultInstallation(root)
+        case "default-choices": try await defaultChoices(root)
+        case "profile-boundary": try await profileBoundary(root)
+        case "revoked-grant": try await revokedGrant(root)
+        case "injected": try await rejectInjectedSignature(root)
+        case "features": try await profileFeatures(root)
         default: preconditionFailure("Unknown scenario")
         }
         print("PASS", CommandLine.arguments[1])

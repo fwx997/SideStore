@@ -99,20 +99,29 @@ class MemorySigningTests(unittest.TestCase):
         # CodeSignKit is replaced by the XML-recording backend in the fixture.
         (directory / "Signer.swift").write_text(signer.replace("import CodeSignKit\n", ""), encoding="utf-8")
         memory = dependency / "Sources/CodeSigning/MemoryEntitlements.swift"
-        operations = ROOT / "SideStore/Core/Operations/PipelineOperations"
+        operation_root = ROOT / "SideStore/Core/Operations"
+        operations = operation_root / "PipelineOperations"
+        defaults = (operation_root / "OperationEntitlements.swift").read_text(encoding="utf-8")
+        (directory / "Defaults.swift").write_text(defaults.replace("import SideSign\n", ""), encoding="utf-8")
         routing = (operations / "ResignAppOperation.swift").read_text(encoding="utf-8")
         cache = (operations / "CacheResignedMetadataOperation.swift").read_text(encoding="utf-8")
+        profiles = (operations / "FetchProvisioningProfilesOperation.swift").read_text(encoding="utf-8")
         extracted = "import Foundation\nfinal class RoutingOperation {\nlet context = TestContext()\n"
         extracted += method(routing, "private func requestedEntitlements(") + "\n"
         extracted += method(routing, "private func cachedEntitlements(") + "\n}\n"
         extracted += "final class MetadataOperation {\n"
         extracted += method(cache, "private func cacheEntitlements(") + "\n"
         extracted += method(cache, "private func cleanupStaleFiles(") + "\n}\n"
+        extracted += "final class FeatureOperation {\nlet context = TestContext()\n"
+        extracted += "func debugLog(_ message: String) {}\nfunc verboseLog(_ message: String) {}\n"
+        extracted += method(profiles, "func updateFeatures(") + "\n}\n"
         (directory / "Operations.swift").write_text(extracted, encoding="utf-8")
         cls.binary = directory / "signing-regression"
         result = subprocess.run(
             [SWIFTC, "-swift-version", "6", "-parse-as-library",
              str(FIXTURES / "memory_signing_stubs.swift"), str(memory),
+             str(DEPENDENCY / "Sources/Models/Entitlement.swift"),
+             str(DEPENDENCY / "Sources/Models/Feature.swift"), str(directory / "Defaults.swift"),
              str(directory / "Signer.swift"), str(directory / "Operations.swift"),
              str(FIXTURES / "memory_signing_main.swift"), "-o", str(cls.binary)],
             capture_output=True, text=True, encoding="utf-8", timeout=120,
@@ -150,6 +159,24 @@ class MemorySigningTests(unittest.TestCase):
 
     def test_string_and_number_values_are_rejected_before_signing(self):
         self.run_scenario("invalid")
+
+    def test_default_install_uses_production_boolean_defaults_and_profile_grants(self):
+        self.run_scenario("defaults")
+
+    def test_default_values_do_not_override_disabled_or_deleted_choices(self):
+        self.run_scenario("default-choices")
+
+    def test_profile_authorization_is_required_for_each_executable(self):
+        self.run_scenario("profile-boundary")
+
+    def test_refresh_removes_memory_when_profile_grant_is_lost(self):
+        self.run_scenario("revoked-grant")
+
+    def test_signer_cannot_inject_an_unapproved_memory_entitlement(self):
+        self.run_scenario("injected")
+
+    def test_profile_features_use_team_capabilities_and_main_app_choices(self):
+        self.run_scenario("features")
 
 
 if __name__ == "__main__":

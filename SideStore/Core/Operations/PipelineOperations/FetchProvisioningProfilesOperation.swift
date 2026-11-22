@@ -232,11 +232,12 @@ private extension FetchProvisioningProfilesOperation{
     
     func updateFeatures(for appID: ALTAppID, targetAppBundle: ALTApplication, team: ALTTeam) async throws -> ALTAppID {
         let bundleID = targetAppBundle.bundleIdentifier
-        var entitlements = self.context.customEntitlementsByBundleID[bundleID]
-            ?? targetAppBundle.entitlements
-        for (key, value) in context.additionalEntitlements {
-            entitlements[key] = value
-        }
+        let customEntitlements = self.context.customEntitlementsByBundleID[bundleID]
+        let entitlements = OperationEntitlements.merging(
+            customEntitlements ?? targetAppBundle.entitlements,
+            additional: targetAppBundle.isExtension ? [:] : context.additionalEntitlements,
+            preservingMemorySelection: customEntitlements != nil
+        )
         
         guard let allowedFeatures = team.type.allowedFeatures else {
             throw OperationError.invalidParameters("Cannot update features for unknown team type.")
@@ -247,9 +248,6 @@ private extension FetchProvisioningProfilesOperation{
         
         // Filter applicable features
         for (key, value) in entitlements {
-            // zh-patch: these optional kernel requests are passed to the code
-            // signer, not to the legacy App ID capability toggle API.
-            if MemoryEntitlements.keys.contains(key) { continue }
             guard let feature = ALTFeature(entitlement: ALTEntitlement(rawValue: key)) else { 
                 continue 
             }

@@ -195,6 +195,7 @@ final class ResignAppOperation: BasePipelineOperation<InstallAppOperationContext
     
     private func resignAppBundle(at fileURL: URL, team: ALTTeam, certificate: ALTCertificate, profiles: [ALTProvisioningProfile]) async throws -> URL {
         let signer = ALTSigner(team: team, certificate: certificate)
+        // Device acceptance still needs proper testing with Apple-issued profiles.
         try await signer.signApp(
             at: fileURL,
             provisioningProfiles: profiles,
@@ -216,11 +217,11 @@ final class ResignAppOperation: BasePipelineOperation<InstallAppOperationContext
 
         // Additional main-app entitlements must never leak into its extensions.
         if !appBundle.isExtension && !context.additionalEntitlements.isEmpty {
-            var merged = requested ?? appBundle.entitlements
-            for (key, value) in context.additionalEntitlements {
-                merged[key.rawValue] = value
-            }
-            requested = merged
+            requested = OperationEntitlements.merging(
+                requested ?? appBundle.entitlements,
+                additional: context.additionalEntitlements,
+                preservingMemorySelection: requested != nil
+            )
         }
         return requested
     }
