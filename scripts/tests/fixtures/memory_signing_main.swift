@@ -36,7 +36,7 @@ func originalPackage(_ root: URL) async throws {
     let signer: any CodeSignerAPI = AppBundleSigner(team: Team(), keyStore: KeyStore())
     try await signer.signApp(at: app.fileURL, provisioningProfiles: profiles, progress: nil)
     expect(app.entitlements[memory] as? Bool, true, "original memory request")
-    expect(app.entitlements[addressing] as? Bool, true, "original address-space request")
+    expect(app.entitlements[addressing] as? Bool, nil, "address-space request still requires its profile entitlement")
     expect(app.entitlements["dynamic-codesigning"] as? Bool, nil, "unapproved private entitlement")
     expect(app.appExtensions.first!.entitlements[memory] as? Bool, nil, "main request cannot reach helper")
     for (bundle, profile) in [(app, profiles[0]), (app.appExtensions.first!, profiles[1])] {
@@ -64,7 +64,7 @@ func disabledAndRemoved(_ root: URL) async throws {
         customEntitlements: [mainID: [memory: false, addressing: false]]
     )
     expect(app.entitlements[memory] as? Bool, false, "explicit false overrides original true")
-    expect(app.entitlements[addressing] as? Bool, false, "explicit false address-space request")
+    expect(app.entitlements[addressing] as? Bool, nil, "unsupported address-space key remains absent")
     try await signer.signApp(
         at: app.fileURL, provisioningProfiles: profiles, customEntitlements: [mainID: [:]]
     )

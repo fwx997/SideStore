@@ -6,13 +6,12 @@ SideStore 最终签名只从描述文件取授权项。自定义授权项没有�
 丢失这些请求。
 
 修复将主程序和每个扩展的自定义授权项，按最终包标识传给 SideSign。
-仅对以下三项保留合法的 Boolean 请求：
+本次仅对增加内存上限保留合法的 Boolean 请求：
 
 - com.apple.developer.kernel.increased-memory-limit
-- com.apple.developer.kernel.increased-debugging-memory-limit
-- com.apple.developer.kernel.extended-virtual-addressing
 
-其他受描述文件约束的授权项仍按原规则处理，应用标识和团队标识仍取自
+扩展虚拟寻址、额外调试内存等其他授权项仍按原描述文件规则处理。
+Henge 的个人账户配置也仅包含增加内存上限和调试附加权限。应用标识和团队标识仍取自
 描述文件。不会修改 Apple 签署的描述文件，也不会将主程序的内存请求
 复制到所有扩展。显式关闭或删除的请求优先于旧缓存。
 

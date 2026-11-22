@@ -69,18 +69,16 @@ diff --git a/Sources/CodeSigning/MemoryEntitlements.swift b/Sources/CodeSigning/
 new file mode 100644
 --- /dev/null
 +++ b/Sources/CodeSigning/MemoryEntitlements.swift
-@@ -0,0 +1,55 @@
+@@ -0,0 +1,53 @@
 +import Foundation
 +import CoreFoundation
 +
-+/// Memory requests belong to each executable's signature. They must not disappear
-+/// merely because the provisioning profile does not repeat these optional keys.
++/// The increased-memory request belongs to each executable's signature. It must
++/// not disappear merely because the profile does not repeat this optional key.
 +/// iOS still decides whether the signed app and its memory request are supported.
 +public enum MemoryEntitlements {
 +    public static let keys: Set<String> = [
-+        "com.apple.developer.kernel.increased-memory-limit",
-+        "com.apple.developer.kernel.increased-debugging-memory-limit",
-+        "com.apple.developer.kernel.extended-virtual-addressing"
++        "com.apple.developer.kernel.increased-memory-limit"
 +    ]
 +
 +    public static func values(in entitlements: [String: any Sendable]) -> [String: any Sendable] {
