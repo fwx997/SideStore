@@ -1,0 +1,2 @@
+# Unified diffs need the leading space on otherwise blank context lines.
+scripts/patches/*.patch text eol=lf whitespace=-blank-at-eol

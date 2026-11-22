@@ -11,6 +11,7 @@ import Foundation
 import SideSign
 
 final class ResignAppOperation: BasePipelineOperation<InstallAppOperationContext, ALTApplication>, @unchecked Sendable {
+    private var signingEntitlementsByBundleID: [String: [String: any Sendable]] = [:]
     
     override func execute(parentProgress: Progress?) async throws -> ALTApplication {
         let startTime = CFAbsoluteTimeGetCurrent()
@@ -37,6 +38,7 @@ final class ResignAppOperation: BasePipelineOperation<InstallAppOperationContext
         
         self.setProgress(5)
         
+        signingEntitlementsByBundleID.removeAll(keepingCapacity: true)
         let effectiveBundleId = self.context.targetBundleIdentifier
         let appBundleURL = try await self.prepareAppBundle(for: appBundle, profiles: profiles, appexBundleIds: context.appexBundleIds ?? [:])
         
@@ -130,6 +132,9 @@ final class ResignAppOperation: BasePipelineOperation<InstallAppOperationContext
         var infoDictionary = parser.rawDictionary as [String: Any]
         
         let newBundleID = appexBundleIds[identifier] ?? profile.bundleIdentifier
+        if let requested = requestedEntitlements(for: appBundle, identifier: identifier, resignedIdentifier: newBundleID) {
+            signingEntitlementsByBundleID[newBundleID] = requested
+        }
         infoDictionary[kCFBundleIdentifierKey as String] = newBundleID
 
         // Fix-up BGTaskScheduler identifiers so they stay under the new bundle ID.
@@ -190,8 +195,45 @@ final class ResignAppOperation: BasePipelineOperation<InstallAppOperationContext
     
     private func resignAppBundle(at fileURL: URL, team: ALTTeam, certificate: ALTCertificate, profiles: [ALTProvisioningProfile]) async throws -> URL {
         let signer = ALTSigner(team: team, certificate: certificate)
-        try await signer.signApp(at: fileURL, provisioningProfiles: profiles, progress: nil)
+        try await signer.signApp(
+            at: fileURL,
+            provisioningProfiles: profiles,
+            customEntitlements: signingEntitlementsByBundleID,
+            progress: nil
+        )
         return fileURL
+    }
+
+    private func requestedEntitlements(
+        for appBundle: ALTApplication,
+        identifier: String,
+        resignedIdentifier: String
+    ) -> [String: any Sendable]? {
+        let identifiers = [identifier, appBundle.bundleIdentifier, resignedIdentifier]
+        let explicit = identifiers.compactMap { context.customEntitlementsByBundleID[$0] }.first
+        let cached = cachedEntitlements(for: appBundle, identifiers: identifiers)
+        var requested = explicit ?? cached
+
+        // Additional main-app entitlements must never leak into its extensions.
+        if !appBundle.isExtension && !context.additionalEntitlements.isEmpty {
+            var merged = requested ?? appBundle.entitlements
+            for (key, value) in context.additionalEntitlements {
+                merged[key.rawValue] = value
+            }
+            requested = merged
+        }
+        return requested
+    }
+
+    private func cachedEntitlements(
+        for appBundle: ALTApplication,
+        identifiers: [String]
+    ) -> [String: any Sendable]? {
+        guard let installedApp = context.installedApp else { return nil }
+        if !appBundle.isExtension { return installedApp.customEntitlements }
+        return installedApp.appExtensions.first {
+            identifiers.contains($0.bundleIdentifier) || identifiers.contains($0.resignedBundleIdentifier)
+        }?.customEntitlements
     }
     
     private func removeMissingAppExtensionReferences(from appBundle: ALTApplication) throws {

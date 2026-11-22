@@ -37,7 +37,7 @@ final class CacheResignedMetadataOperation: BasePipelineOperation<InstallAppOper
         
         try cacheProvisioningProfiles(for: installedApp)
         try cacheInfoPlist(for: installedApp, targetAppBundle: targetAppBundle)
-        try cacheEntitlements(for: installedApp)
+        try cacheEntitlements(for: installedApp, targetAppBundle: targetAppBundle)
         
         self.setProgress(100)
     }
@@ -78,23 +78,23 @@ final class CacheResignedMetadataOperation: BasePipelineOperation<InstallAppOper
         }
     }
     
-    private func cacheEntitlements(for app: InstalledApp) throws {
-        guard let profiles = self.context.provisioningProfiles else { return }
+    private func cacheEntitlements(for app: InstalledApp, targetAppBundle: ALTApplication) throws {
         let entitlementsDirectory = app.directoryURL.appendingPathComponent("Entitlements")
         try FileManager.default.createDirectory(at: entitlementsDirectory, withIntermediateDirectories: true, attributes: nil)
         
-        let validEntitlementIDs = Set(profiles.values.map { $0.bundleIdentifier })
+        let validEntitlementIDs = Set(targetAppBundle.allAppBundles.map { $0.bundleIdentifier })
         cleanupStaleFiles(in: entitlementsDirectory, matchingExtension: "plist", validIDs: validEntitlementIDs, description: "Entitlements")
         
-        for (_, profile) in profiles {
-            let resignedID = profile.bundleIdentifier
+        // Cache what each executable actually contains, including memory keys
+        // absent from the profile. Refresh and reinstall reuse this metadata.
+        for bundle in targetAppBundle.allAppBundles {
+            let resignedID = bundle.bundleIdentifier
             let fileURL = entitlementsDirectory.appendingPathComponent("\(resignedID).plist")
-            let entitlements = self.context.customEntitlementsByBundleID[resignedID] ?? profile.entitlements
+            let entitlements = bundle.entitlements
             
-            if let plistData = try? PropertyListSerialization.data(fromPropertyList: entitlements, format: .xml, options: 0) {
-                try? plistData.write(to: fileURL, options: .atomic)
-                debugLog("[CacheResignedMetadataOperation] Cached Entitlements for \(resignedID) to \(fileURL.path)")
-            }
+            let plistData = try PropertyListSerialization.data(fromPropertyList: entitlements, format: .xml, options: 0)
+            try plistData.write(to: fileURL, options: .atomic)
+            debugLog("[CacheResignedMetadataOperation] Cached Entitlements for \(resignedID) to \(fileURL.path)")
         }
     }
     

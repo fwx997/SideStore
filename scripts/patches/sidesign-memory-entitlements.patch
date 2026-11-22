@@ -1,0 +1,127 @@
+diff --git a/Sources/CodeSigning/CodeSignerAPI.swift b/Sources/CodeSigning/CodeSignerAPI.swift
+--- a/Sources/CodeSigning/CodeSignerAPI.swift
++++ b/Sources/CodeSigning/CodeSignerAPI.swift
+@@ -60,7 +60,16 @@
+         self.keyStore = keyStore
+     }
+ 
+-    public func signApp(at appURL: URL, provisioningProfiles profiles: [ProvisioningProfile], progress: Progress? = nil) async throws
++    public func signApp(at appURL: URL, provisioningProfiles profiles: [ProvisioningProfile], progress: Progress? = nil) async throws {
++        try await signApp(at: appURL, provisioningProfiles: profiles, customEntitlements: [:], progress: progress)
++    }
++
++    public func signApp(
++        at appURL: URL,
++        provisioningProfiles profiles: [ProvisioningProfile],
++        customEntitlements: [String: [String: any Sendable]],
++        progress: Progress? = nil
++    ) async throws
+     {
+         debugLog("[SideSign] AppBundleSigner.signApp called")
+         verboseLog("[SideSign] URL: \(appURL.path), Profiles: \(profiles.map { "\($0.name) (\($0.bundleIdentifier))" })")
+@@ -82,6 +91,7 @@
+         }
+ 
+         var entitlementsByURL: [URL: String] = [:]
++        var memoryEntitlementsByURL: [URL: [String: any Sendable]] = [:]
+ 
+         func prepare(_ app: AppBundle) throws {
+             verboseLog("[SideSign] AppBundleSigner.prepare started for: \(app.bundleIdentifier)")
+@@ -95,7 +105,7 @@
+             var filteredEntitlements = matchedProfile.entitlements
+             verboseLog("[SideSign] Original profile entitlements: \(filteredEntitlements)")
+ 
+-            let applicationEntitlements = app.entitlements
++            let applicationEntitlements = customEntitlements[app.bundleIdentifier] ?? app.entitlements
+ 
+             for (key, _) in filteredEntitlements {
+                 if let applicationValue = applicationEntitlements[key] {
+@@ -122,6 +132,12 @@
+                 }
+             }
+ 
++            filteredEntitlements = try MemoryEntitlements.applying(
++                requested: applicationEntitlements,
++                to: filteredEntitlements
++            )
++            memoryEntitlementsByURL[app.fileURL.resolvingSymlinksInPath()] =
++                MemoryEntitlements.values(in: filteredEntitlements)
+             verboseLog("[SideSign] Filtered entitlements for signing: \(filteredEntitlements)")
+ 
+             let plist = try PropertyListSerialization.data(
+@@ -213,6 +229,15 @@
+                 }
+             )
+ 
++            // Read the executable again: a successful signing call alone does not
++            // prove that the requested entitlements reached its code signature.
++            for (url, expected) in memoryEntitlementsByURL where !expected.isEmpty {
++                guard let signedApp = AppBundle(fileURL: url) else {
++                    throw SignerError.invalidApp(cause: "Could not inspect the signed executable.")
++                }
++                try MemoryEntitlements.validate(expected: expected, actual: signedApp.entitlements)
++            }
++
+             debugLog("[SideSign] AppBundleSigner.signApp completed successfully")
+             verboseLog("[SideSign] App URL: \(appURL.path)")
+         } catch {
+diff --git a/Sources/CodeSigning/MemoryEntitlements.swift b/Sources/CodeSigning/MemoryEntitlements.swift
+new file mode 100644
+--- /dev/null
++++ b/Sources/CodeSigning/MemoryEntitlements.swift
+@@ -0,0 +1,55 @@
++import Foundation
++import CoreFoundation
++
++/// Memory requests belong to each executable's signature. They must not disappear
++/// merely because the provisioning profile does not repeat these optional keys.
++/// iOS still decides whether the signed app and its memory request are supported.
++public enum MemoryEntitlements {
++    public static let keys: Set<String> = [
++        "com.apple.developer.kernel.increased-memory-limit",
++        "com.apple.developer.kernel.increased-debugging-memory-limit",
++        "com.apple.developer.kernel.extended-virtual-addressing"
++    ]
++
++    public static func values(in entitlements: [String: any Sendable]) -> [String: any Sendable] {
++        entitlements.filter { keys.contains($0.key) }
++    }
++
++    public static func applying(
++        requested: [String: any Sendable],
++        to entitlements: [String: any Sendable]
++    ) throws -> [String: any Sendable] {
++        var result = entitlements
++        for key in keys.sorted() {
++            guard let value = requested[key] else {
++                result.removeValue(forKey: key)
++                continue
++            }
++            result[key] = try boolean(value, key: key)
++        }
++        return result
++    }
++
++    public static func validate(
++        expected: [String: any Sendable],
++        actual: [String: any Sendable]
++    ) throws {
++        for (key, value) in values(in: expected) {
++            let requested = try boolean(value, key: key)
++            guard let actualValue = actual[key],
++                  try boolean(actualValue, key: key) == requested else {
++                throw SignerError.invalidApp(
++                    cause: "The signed executable did not retain the requested memory entitlement '\(key)'."
++                )
++            }
++        }
++    }
++
++    private static func boolean(_ value: any Sendable, key: String) throws -> Bool {
++        guard let number = value as? NSNumber,
++              CFGetTypeID(number) == CFBooleanGetTypeID() else {
++            throw SignerError.invalidApp(cause: "The memory entitlement '\(key)' must be a Boolean.")
++        }
++        return number.boolValue
++    }
++}

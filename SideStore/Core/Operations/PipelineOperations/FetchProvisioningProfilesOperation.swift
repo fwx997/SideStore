@@ -247,6 +247,9 @@ private extension FetchProvisioningProfilesOperation{
         
         // Filter applicable features
         for (key, value) in entitlements {
+            // zh-patch: these optional kernel requests are passed to the code
+            // signer, not to the legacy App ID capability toggle API.
+            if MemoryEntitlements.keys.contains(key) { continue }
             guard let feature = ALTFeature(entitlement: ALTEntitlement(rawValue: key)) else { 
                 continue 
             }
