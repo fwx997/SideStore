@@ -155,7 +155,7 @@ jobs:
         working-directory: SideInstaller-build
         env:
           VERSION: 2.1.1
-          BUILD_NUMBER: 20261123.1
+          BUILD_NUMBER: 20261124.1
         run: |
           set -o pipefail
           bash scripts/build-ipa.sh 2>&1 | tee sideinstaller-build.log
@@ -201,7 +201,7 @@ jobs:
           if [ -f .github/prepare_dependencies.sh ]; then
             sh .github/prepare_dependencies.sh
           fi
-          python3 .github/configure_combined_build.py --build-number "20261123.$GITHUB_RUN_NUMBER"
+          python3 .github/configure_combined_build.py --build-number "20261124.$GITHUB_RUN_NUMBER"
           xcodebuild archive -archivePath archive -scheme LiveContainer -project LiveContainer.xcodeproj -sdk iphoneos -arch arm64 -configuration Release 2>&1 | tee build.log | xcbeautify --renderer github-actions
       - name: Package all three applications
         working-directory: LiveContainer-build
