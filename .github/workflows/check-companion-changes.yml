@@ -1,0 +1,55 @@
+name: Check companion actions before packaging
+
+on:
+  workflow_dispatch:
+    inputs:
+      livecontainer_ref:
+        description: Exact LiveContainer commit to validate
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  portable:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/checkout@v4
+        with:
+          repository: fwx997/LiveContainer
+          ref: ${{ inputs.livecontainer_ref }}
+          path: LiveContainer-build
+      - name: SideStore and companion production regressions
+        run: |
+          swiftc --version
+          python3 -m unittest discover -s scripts/tests -v
+          python3 -m unittest discover -s LiveContainer-build/.github/tests -p 'test_sideinstaller_*.py' -v
+  native_intents:
+    runs-on: macos-26-intel
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: fwx997/LiveContainer
+          ref: ${{ inputs.livecontainer_ref }}
+          submodules: recursive
+      - uses: maxim-lobanov/setup-xcode@v1.6.0
+        with:
+          xcode-version: '26.6'
+      - name: Build native shortcut extension
+        run: |
+          set -o pipefail
+          python3 .github/configure_combined_build.py --build-number 20261124.1
+          xcodebuild -project LiveContainer.xcodeproj -target LaunchAppExtension -sdk iphoneos -arch arm64 -configuration Release CODE_SIGNING_ALLOWED=NO CONFIGURATION_BUILD_DIR="$RUNNER_TEMP/NativeIntents" 2>&1 | tee native-intents.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-intents-check
+          path: |
+            native-intents.log
+            ${{ runner.temp }}/NativeIntents/LaunchAppExtension.appex/Metadata.appintents

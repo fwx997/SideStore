@@ -10,7 +10,8 @@ enum CombinedAppDistribution {
     static let companions = ["SideStore", "SideInstaller"]
     static let protectedInfoKeys: Set<String> = [
         embeddedAppsKey, updateURLKey, sourceURLKey, receiptKey, "CFBundleVersion", "CFBundleShortVersionString",
-        "BGTaskSchedulerPermittedIdentifiers", "CFBundleURLTypes", "UIBackgroundModes", "NSSupportsLiveActivities"
+        "BGTaskSchedulerPermittedIdentifiers", "CFBundleURLTypes", "UIBackgroundModes", "NSSupportsLiveActivities",
+        "LCSideInstallerShortcutsVersion"
     ]
 
     static func isSelfIdentifier(_ identifier: String, base: String, running: String) -> Bool {
