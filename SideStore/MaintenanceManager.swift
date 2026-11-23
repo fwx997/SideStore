@@ -65,7 +65,11 @@ public final class MaintenanceManager {
                 AnisetteDataManager.shared.clearCache()
                 await AuthManager.shared.signOut(keepCertificate: true, keepAnisetteData: false)
             case 3:
-                UserDefaults.standard.tunnelOverridePeerIp = nil
+                // siboot just verified this address while installing the host.
+                // This old migration must not discard a fresh device handoff.
+                if !UserDefaults.standard.bool(forKey: "LCCombinedBootstrapSeeded") {
+                    UserDefaults.standard.tunnelOverridePeerIp = nil
+                }
             case 4:
                 await migrateLegacyCachedAppBundles()
             case 5:
