@@ -248,6 +248,7 @@ jobs:
         run: |
           set -o pipefail
           python3 .github/configure_combined_build.py --build-number 20261124.1
+          xcodebuild -project LiveContainer.xcodeproj -target LiveContainerShared -sdk iphoneos -arch arm64 -configuration Release CODE_SIGNING_ALLOWED=NO CONFIGURATION_BUILD_DIR="$RUNNER_TEMP/NativeIntents" 2>&1 | tee native-shared.log
           xcodebuild -project LiveContainer.xcodeproj -target LaunchAppExtension -sdk iphoneos -arch arm64 -configuration Release CODE_SIGNING_ALLOWED=NO CONFIGURATION_BUILD_DIR="$RUNNER_TEMP/NativeIntents" 2>&1 | tee native-intents.log
       - uses: actions/upload-artifact@v4
         if: always()
@@ -255,4 +256,5 @@ jobs:
           name: native-intents-check
           path: |
             native-intents.log
+            native-shared.log
             ${{ runner.temp }}/NativeIntents/LaunchAppExtension.appex/Metadata.appintents
