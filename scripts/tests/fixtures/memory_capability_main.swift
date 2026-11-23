@@ -80,6 +80,19 @@ func cancelledCapability() async throws {
         _ = try await task.value
         preconditionFailure("A cancelled capability update completed successfully")
     } catch is CancellationError {}
+    precondition(CapabilityProtocol.requests.isEmpty, "Cancellation after the legacy response must prevent the capability request")
+
+    let direct = Task {
+        withUnsafeCurrentTask { $0?.cancel() }
+        try await DeveloperPortal().enableCapabilities(
+            ["INCREASED_MEMORY_LIMIT"], for: syntheticApp(features: [:]), team: Team(), session: Session()
+        )
+    }
+    do {
+        try await direct.value
+        preconditionFailure("An already cancelled direct capability request completed successfully")
+    } catch is CancellationError {}
+    precondition(CapabilityProtocol.requests.isEmpty, "An already cancelled task must not contact the capability endpoint")
 }
 
 func capabilityRedirect() async throws {

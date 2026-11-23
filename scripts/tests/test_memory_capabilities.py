@@ -122,8 +122,8 @@ class CapabilityRequestTests(unittest.TestCase):
                 [str(self.binary), "redirect", str(server.server_port)],
                 capture_output=True, text=True, timeout=30,
             )
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual(server.paths, ["/services/v1/bundleIds/APPID12345"])
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         finally:
             server.shutdown()
             server.server_close()
