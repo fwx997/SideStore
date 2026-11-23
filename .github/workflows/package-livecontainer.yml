@@ -25,6 +25,11 @@ on:
         required: false
         default: false
         type: boolean
+      checks_only:
+        description: Run portable regressions and compile the native shortcut extension without packaging
+        required: false
+        default: false
+        type: boolean
       package_only:
         description: Compile and package only; device testing is performed separately
         required: false
@@ -45,18 +50,28 @@ permissions:
 
 jobs:
   regressions:
-    if: ${{ !inputs.package_only && (inputs.reuse_build_run == '' || inputs.rebuild_sidestore) }}
+    if: ${{ inputs.checks_only || (!inputs.package_only && (inputs.reuse_build_run == ''' || inputs.rebuild_sidestore)) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+      - uses: actions/checkout@v4
+        if: ${{ inputs.checks_only }}
+        with:
+          repository: fwx997/LiveContainer
+          ref: ${{ inputs.livecontainer_ref }}
+          path: LiveContainer-build
       - name: Run production Swift regression tests
         run: |
           swiftc --version
           python3 -m unittest discover -s scripts/tests -v
+      - name: Companion shortcut production regressions
+        if: ${{ inputs.checks_only }}
+        run: python3 -m unittest discover -s LiveContainer-build/.github/tests -p 'test_sideinstaller_*.py' -v
   package:
+    if: ${{ !inputs.checks_only }}
     runs-on: ${{ inputs.runner || 'xcode-27' }}
     timeout-minutes: 120
     steps:
@@ -215,3 +230,29 @@ jobs:
             LiveContainer-build/build.log
             SideInstaller-build/sideinstaller-build.log
             reused-build.json
+
+  native_intents:
+    if: ${{ inputs.checks_only }}
+    runs-on: macos-26-intel
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: fwx997/LiveContainer
+          ref: ${{ inputs.livecontainer_ref }}
+          submodules: recursive
+      - uses: maxim-lobanov/setup-xcode@v1.6.0
+        with:
+          xcode-version: '26.6'
+      - name: Build native shortcut extension
+        run: |
+          set -o pipefail
+          python3 .github/configure_combined_build.py --build-number 20261124.1
+          xcodebuild -project LiveContainer.xcodeproj -target LaunchAppExtension -sdk iphoneos -arch arm64 -configuration Release CODE_SIGNING_ALLOWED=NO CONFIGURATION_BUILD_DIR="$RUNNER_TEMP/NativeIntents" 2>&1 | tee native-intents.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-intents-check
+          path: |
+            native-intents.log
+            ${{ runner.temp }}/NativeIntents/LaunchAppExtension.appex/Metadata.appintents
