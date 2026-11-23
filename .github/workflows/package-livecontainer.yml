@@ -50,7 +50,7 @@ permissions:
 
 jobs:
   regressions:
-    if: ${{ inputs.checks_only || (!inputs.package_only && (inputs.reuse_build_run == ''' || inputs.rebuild_sidestore)) }}
+    if: ${{ inputs.checks_only || (!inputs.package_only && (inputs.reuse_build_run == '' || inputs.rebuild_sidestore)) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
