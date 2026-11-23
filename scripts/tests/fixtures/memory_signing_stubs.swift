@@ -122,9 +122,13 @@ enum AppConstants {
 
 actor DeveloperPortalProxy {
     static let shared = DeveloperPortalProxy()
+    private(set) var updates: [ALTAppID] = []
+
+    func reset() { updates = [] }
 
     func updateAppID(_ appID: ALTAppID, team: ALTTeam) async throws -> ALTAppID {
-        appID
+        updates.append(appID)
+        return appID
     }
 }
 final class InstalledExtension {

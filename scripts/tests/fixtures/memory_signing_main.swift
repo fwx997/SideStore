@@ -301,11 +301,29 @@ func cachedProfileFeatures(_ root: URL) async throws {
     let initial = ALTAppID(bundleIdentifier: mainID, features: [.appGroups: "true"])
     let cachedChoices: [[String: any Sendable]] = [[memory: false], [:], [memory: true]]
     for cached in cachedChoices {
+        await DeveloperPortalProxy.shared.reset()
         installed.customEntitlements = cached
         let updated = try await operation.updateFeatures(for: initial, targetAppBundle: app, team: Team())
-        let expected = cached[memory].map { ($0 as! Bool) ? "true" : "false" }
-        precondition(updated.features[.increasedMemoryLimit] == expected, "The profile request disagrees with the cached signing choice")
+        let enabled = cached[memory] as? Bool == true
+        precondition((updated.features[.increasedMemoryLimit] == "true") == enabled,
+                     "The effective portal capability disagrees with the cached signing choice")
+        let requests = await DeveloperPortalProxy.shared.updates
+        precondition(requests.count == (enabled ? 1 : 0),
+                     "An off or absent cached choice must not issue a redundant update to an already-off capability")
+        if enabled {
+            precondition(requests[0].features[.increasedMemoryLimit] == "true",
+                         "The requested profile must explicitly reassert the cached memory grant")
+        }
     }
+    installed.customEntitlements = [memory: false]
+    await DeveloperPortalProxy.shared.reset()
+    let enabledOnPortal = ALTAppID(bundleIdentifier: mainID, features: [.appGroups: "true", .increasedMemoryLimit: "true"])
+    let disabled = try await operation.updateFeatures(for: enabledOnPortal, targetAppBundle: app, team: Team())
+    let disabledRequests = await DeveloperPortalProxy.shared.updates
+    precondition(disabled.features[.increasedMemoryLimit] == "false"
+                 && disabledRequests.count == 1
+                 && disabledRequests[0].features[.increasedMemoryLimit] == "false",
+                 "An explicit disabled choice must update a previously enabled portal capability")
     let helper = app.appExtensions.first!
     installed.appExtensions = [InstalledExtension(helperID, entitlements: [memory: true])]
     let helperAppID = ALTAppID(bundleIdentifier: helperID, features: [.appGroups: "true"])
