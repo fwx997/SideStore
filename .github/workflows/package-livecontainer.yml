@@ -15,6 +15,11 @@ on:
         description: HTTPS download URL for future complete three-app updates
         required: true
         type: string
+      reuse_build_run:
+        description: Reuse verified SideStore and SideInstaller artifacts from this run (leave empty to compile them)
+        required: false
+        default: ''
+        type: string
       package_only:
         description: Compile and package only; device testing is performed separately
         required: false
@@ -30,10 +35,11 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   regressions:
-    if: ${{ !inputs.package_only }}
+    if: ${{ !inputs.package_only && inputs.reuse_build_run == '' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -69,9 +75,11 @@ jobs:
       - name: Install build tools
         run: brew install ldid xcbeautify xcodegen
       - uses: dtolnay/rust-toolchain@stable
+        if: ${{ inputs.reuse_build_run == '' }}
         with:
           targets: aarch64-apple-ios,aarch64-apple-ios-sim
       - uses: actions/cache@v4
+        if: ${{ inputs.reuse_build_run == '' }}
         with:
           path: |
             ~/.cargo/registry
@@ -88,15 +96,16 @@ jobs:
           python3 .github/tests/test_background_refresh.py --require-swift -v
           python3 -m unittest discover -s .github/tests -p test_companion_switch.py -v
       - name: Test SideStore signing, recovery, and background refresh
-        if: ${{ !inputs.package_only }}
+        if: ${{ !inputs.package_only && inputs.reuse_build_run == '' }}
         run: |
           swiftc --version
           python3 -m unittest discover -s scripts/tests -v
       - name: Test SideInstaller and siboot
-        if: ${{ !inputs.package_only }}
+        if: ${{ !inputs.package_only && inputs.reuse_build_run == '' }}
         working-directory: SideInstaller-build
         run: LOCKED=1 bash scripts/test-rust.sh
       - name: Build complete SideInstaller and Minis bootstrap
+        if: ${{ inputs.reuse_build_run == '' }}
         working-directory: SideInstaller-build
         env:
           VERSION: 2.1.1
@@ -105,11 +114,13 @@ jobs:
           set -o pipefail
           bash scripts/build-ipa.sh 2>&1 | tee sideinstaller-build.log
       - uses: actions/upload-artifact@v4
+        if: ${{ inputs.reuse_build_run == '' }}
         with:
           name: SideInstaller-and-siboot
           path: SideInstaller-build/build/SideInstaller.ipa
           if-no-files-found: error
       - name: Set SideStore version
+        if: ${{ inputs.reuse_build_run == '' }}
         run: |
           VERSION=$(python3 scripts/ci/workflow.py get-marketing-version)
           COMMIT=$(python3 scripts/ci/workflow.py commit-id)
@@ -117,8 +128,29 @@ jobs:
           python3 scripts/ci/workflow.py set-marketing-version "$NORMALIZED"
           echo "SIDESTORE_VERSION=$NORMALIZED" >> "$GITHUB_ENV"
       - name: Build SideStore
+        if: ${{ inputs.reuse_build_run == '' }}
         run: python3 scripts/ci/workflow.py build
       - uses: actions/upload-artifact@v4
+        if: ${{ inputs.reuse_build_run == '' }}
+        with:
+          name: SideStore-${{ env.SIDESTORE_VERSION }}.ipa
+          path: SideStore.ipa
+          if-no-files-found: error
+      - name: Reuse exact verified application artifacts
+        if: ${{ inputs.reuse_build_run != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REUSE_BUILD_RUN: ${{ inputs.reuse_build_run }}
+          EXPECTED_SIDEINSTALLER: ${{ inputs.sideinstaller_ref }}
+        run: python3 scripts/reuse_combined_artifacts.py
+      - uses: actions/upload-artifact@v4
+        if: ${{ inputs.reuse_build_run != '' }}
+        with:
+          name: SideInstaller-and-siboot
+          path: SideInstaller-build/build/SideInstaller.ipa
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: ${{ inputs.reuse_build_run != '' }}
         with:
           name: SideStore-${{ env.SIDESTORE_VERSION }}.ipa
           path: SideStore.ipa
@@ -158,3 +190,4 @@ jobs:
             build/logs/build.log
             LiveContainer-build/build.log
             SideInstaller-build/sideinstaller-build.log
+            reused-build.json
