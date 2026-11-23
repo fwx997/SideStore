@@ -21,6 +21,31 @@ enum CombinedAppDistribution {
         isSelf && !isStoreUpdate && hasInstalledInput
     }
 
+    /// CFBundleVersion is a dot-separated numeric build, independent of the
+    /// marketing version. Compare components without overflowing an integer.
+    static func isNewerBuild(_ candidate: String?, than installed: String?) -> Bool {
+        guard let candidate, let installed,
+              let latest = buildComponents(candidate), let current = buildComponents(installed) else { return false }
+        for index in 0..<max(latest.count, current.count) {
+            let left = index < latest.count ? latest[index] : "0"
+            let right = index < current.count ? current[index] : "0"
+            if left.count != right.count { return left.count > right.count }
+            if left != right { return left > right }
+        }
+        return false
+    }
+
+    private static func buildComponents(_ value: String) -> [String]? {
+        let parts = value.split(separator: ".", omittingEmptySubsequences: false)
+        guard !parts.isEmpty, parts.allSatisfy({ part in
+            !part.isEmpty && part.utf8.allSatisfy { (48...57).contains($0) }
+        }) else { return nil }
+        return parts.map { part in
+            let digits = part.drop(while: { $0 == "0" })
+            return digits.isEmpty ? "0" : String(digits)
+        }
+    }
+
     static func hostURL(for bundleURL: URL) -> URL {
         guard bundleURL.lastPathComponent == "SideStoreApp.framework" else { return bundleURL }
         return bundleURL.deletingLastPathComponent().deletingLastPathComponent()

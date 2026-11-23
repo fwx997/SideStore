@@ -99,6 +99,7 @@ struct CertificateHarness {
         case "extensions": try extensions(host)
         case "url": url()
         case "version": version()
+        case "build-update": buildUpdate()
         case "metadata": metadata()
         case "background-identifiers": backgroundIdentifiers()
         case "receipt": try receipt(host, defaults)
@@ -157,6 +158,21 @@ struct CertificateHarness {
         try! verifier.verifyCombinedVersion(app, expected: AppVersion(version: "3.9", buildVersion: "42"))
         rejects { try verifier.verifyCombinedVersion(app, expected: AppVersion(version: "3.10", buildVersion: "42")) }
         rejects { try verifier.verifyCombinedVersion(app, expected: AppVersion(version: "3.9", buildVersion: "43")) }
+    }
+
+    static func buildUpdate() {
+        expect(CombinedAppDistribution.isNewerBuild("20261123.10", than: "20261123.9"), "numeric component ordering")
+        expect(CombinedAppDistribution.isNewerBuild("20261124.1", than: "20261123.999"), "later date")
+        expect(CombinedAppDistribution.isNewerBuild("1.0.1", than: "1"), "missing components are zero")
+        expect(CombinedAppDistribution.isNewerBuild("9999999999999999999999.2", than: "9999999999999999999999.1"), "no integer overflow")
+        for previous in ["20261123.10", "20261124.1", "20261123.010.0"] {
+            expect(!CombinedAppDistribution.isNewerBuild("20261123.10", than: previous), "same or older build is never an update")
+        }
+        expect(!CombinedAppDistribution.isNewerBuild("1", than: "1.0.0"), "zero padding is equal")
+        for invalid in [nil, "", "1..2", ".1", "1.", "1.beta", "1.-2", "1.２"] as [String?] {
+            expect(!CombinedAppDistribution.isNewerBuild(invalid, than: "1"), "invalid candidate is rejected")
+            expect(!CombinedAppDistribution.isNewerBuild("2", than: invalid), "unknown current build cannot justify an update")
+        }
     }
 
     static func metadata() {

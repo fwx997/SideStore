@@ -204,6 +204,17 @@ public class InstalledApp: BaseEntity, InstalledAppProtocol
         {
             return false
         }
+
+        // Combined releases retain LC's marketing version while their build
+        // advances. Preserve legacy source semantics for every other app.
+        if self.version == latestVersion.version,
+           CombinedAppDistribution.isSelfIdentifier(
+               self.bundleIdentifier, base: StoreApp.altstoreAppID, running: Bundle.Info.activeBundleIdentifier
+           ), CombinedAppDistribution.requiresCompanions(at: Bundle.Info.activeBundleURL) {
+            return CombinedAppDistribution.isNewerBuild(
+                latestVersion.buildVersion, than: self.storeBuildVersion ?? self.buildVersion
+            )
+        }
         
         // Get current semantic versions
         let currentSemVer = SemanticVersion(self.version)

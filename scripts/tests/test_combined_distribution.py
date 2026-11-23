@@ -57,6 +57,7 @@ class CombinedDistributionTests(unittest.TestCase):
     def test_lost_extensions_or_mismatched_versions_are_rejected(self): self.scenario("extensions")
     def test_only_https_distribution_url_is_accepted(self): self.scenario("url")
     def test_catalog_version_and_build_must_match_download(self): self.scenario("version")
+    def test_numeric_build_updates_reject_equal_older_and_malformed_builds(self): self.scenario("build-update")
     def test_cached_custom_info_cannot_replace_distribution_metadata(self): self.scenario("metadata")
     def test_background_identifiers_rebase_without_double_team_suffix(self): self.scenario("background-identifiers")
     def test_failed_or_cancelled_install_does_not_consume_bootstrap(self): self.scenario("receipt")
