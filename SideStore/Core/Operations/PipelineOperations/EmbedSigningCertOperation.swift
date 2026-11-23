@@ -41,6 +41,7 @@ final class EmbedSigningCertOperation: BasePipelineOperation<InstallAppOperation
             if let p12Data = try? CertificateManager.convert(cert, password: p12Password) {
                 let p12URL = appBundle.fileURL.appendingPathComponent("ALTCertificate.p12")
                 try p12Data.write(to: p12URL, options: .atomic)
+                try embedCombinedCertificateIfNeeded(p12Data, serialNumber: cert.serialNumber, in: appBundle.fileURL)
                 debugLog("[EmbedSigningCertOperation] Successfully embedded ALTCertificate.p12 in app bundle: \(p12URL.path)")
             } else {
                 let derURL = appBundle.fileURL.appendingPathComponent("ALTCertificate.der")
@@ -51,5 +52,15 @@ final class EmbedSigningCertOperation: BasePipelineOperation<InstallAppOperation
             debugLog("[EmbedSigningCertOperation] ERROR: Failed to embed signing certificate into app bundle: \(error)")
             throw error
         }
+    }
+
+    private func embedCombinedCertificateIfNeeded(_ data: Data, serialNumber: String, in host: URL) throws {
+        guard context.targetsRunningStore && CombinedAppDistribution.requiresCompanions(at: host) else { return }
+        let framework = host.appendingPathComponent("Frameworks/SideStoreApp.framework")
+        var info = try CombinedAppDistribution.info(at: framework)
+        info[Bundle.Info.certificateID] = serialNumber
+        let plist = try PropertyListSerialization.data(fromPropertyList: info, format: .binary, options: 0)
+        try plist.write(to: framework.appendingPathComponent("Info.plist"), options: .atomic)
+        try data.write(to: framework.appendingPathComponent("ALTCertificate.p12"), options: .atomic)
     }
 }

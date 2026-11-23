@@ -115,6 +115,9 @@ final class ResignAppOperation: BasePipelineOperation<InstallAppOperationContext
             let updatedAppExBundleId = appExtension.bundleIdentifier.replacingOccurrences(of: targetAppBundle.bundleIdentifier, with: bundleIdentifier)
             try self.prepare(appExtension, bundleID: updatedAppExBundleId, profiles: profiles, appexBundleIds: appexBundleIds)
         }
+        if context.targetsRunningStore && CombinedAppDistribution.requiresCompanions(at: appBundleURL) {
+            try CombinedAppDistribution.validatePackage(at: appBundleURL)
+        }
         
         return appBundleURL
     }
@@ -130,20 +133,21 @@ final class ResignAppOperation: BasePipelineOperation<InstallAppOperationContext
             throw OperationError.missingInfoPlist(reason: "Could not read Info.plist for bundle '\(identifier)'.")
         }
         var infoDictionary = parser.rawDictionary as [String: Any]
+        let originalBundleID = appBundle.bundleIdentifier
         
         let newBundleID = appexBundleIds[identifier] ?? profile.bundleIdentifier
         if let requested = requestedEntitlements(for: appBundle, identifier: identifier, resignedIdentifier: newBundleID) {
+            let cached = OperationEntitlements.cached(
+                for: appBundle, identifiers: [identifier, appBundle.bundleIdentifier, newBundleID], installedApp: context.installedApp
+            )
+            try OperationEntitlements.validateSigningMemoryGrant(
+                requested: requested, cached: cached,
+                pendingRequest: context.pendingMemoryCapabilityRequests[newBundleID],
+                profile: profile.entitlements, bundleIdentifier: newBundleID
+            )
             signingEntitlementsByBundleID[newBundleID] = requested
         }
         infoDictionary[kCFBundleIdentifierKey as String] = newBundleID
-
-        // Fix-up BGTaskScheduler identifiers so they stay under the new bundle ID.
-        // Otherwise bg register() and submit() both succeed and the handler is never
-        // called, with no error surfaced to the app.
-        if identifier != newBundleID, let taskIDs = infoDictionary["BGTaskSchedulerPermittedIdentifiers"] as? [String] {
-            let taskIDs = self.rewrittenTaskSchedulerIdentifiers(taskIDs, from: identifier, to: newBundleID)
-            infoDictionary["BGTaskSchedulerPermittedIdentifiers"] = taskIDs
-        }
 
         infoDictionary.removeValue(forKey: "DTXcode")
         infoDictionary.removeValue(forKey: "DTXcodeBuild")
@@ -151,6 +155,7 @@ final class ResignAppOperation: BasePipelineOperation<InstallAppOperationContext
         for (key, value) in additionalInfoDictionaryValues {
             infoDictionary[key] = value
         }
+        let protectedInfoDictionary = infoDictionary
 
         if let customPlist = context.customInfoPlistByBundleID[identifier] {
             for (key, value) in customPlist {
@@ -159,6 +164,22 @@ final class ResignAppOperation: BasePipelineOperation<InstallAppOperationContext
                 }
                 infoDictionary[key] = value
             }
+        }
+
+        if context.targetsRunningStore,
+           CombinedAppDistribution.requiresCompanions(at: context.targetAppBundle?.fileURL ?? appBundle.fileURL) {
+            infoDictionary = CombinedAppDistribution.preservingDistributionInfo(infoDictionary, original: protectedInfoDictionary)
+            if !appBundle.isExtension, let receipt = CombinedAppBootstrap.prepareReceipt() {
+                infoDictionary[CombinedAppDistribution.receiptKey] = receipt
+            }
+        }
+
+        // Apply after custom Info.plist values. A running host already has a
+        // team suffix, so rewriting must remain idempotent on every self sign.
+        if let taskIDs = infoDictionary["BGTaskSchedulerPermittedIdentifiers"] as? [String] {
+            infoDictionary["BGTaskSchedulerPermittedIdentifiers"] = CombinedAppDistribution.rebasedTaskIdentifiers(
+                taskIDs, from: originalBundleID, base: identifier, to: newBundleID
+            )
         }
 
         if let appGroups = profile.entitlements[.appGroups] as? [String] {
@@ -211,32 +232,17 @@ final class ResignAppOperation: BasePipelineOperation<InstallAppOperationContext
         resignedIdentifier: String
     ) -> [String: any Sendable]? {
         let identifiers = [identifier, appBundle.bundleIdentifier, resignedIdentifier]
-        let explicit = identifiers.compactMap { context.customEntitlementsByBundleID[$0] }.first
-        let cached = cachedEntitlements(for: appBundle, identifiers: identifiers)
-        var requested = explicit ?? cached
-
-        // Additional main-app entitlements must never leak into its extensions.
-        if !appBundle.isExtension && !context.additionalEntitlements.isEmpty {
-            requested = OperationEntitlements.merging(
-                requested ?? appBundle.entitlements,
-                additional: context.additionalEntitlements,
-                preservingMemorySelection: requested != nil
-            )
-        }
-        return requested
+        let selection = OperationEntitlements.requested(
+            for: appBundle, identifiers: identifiers,
+            resignedBundleIdentifier: resignedIdentifier,
+            custom: context.customEntitlementsByBundleID,
+            explicitMemorySelections: context.userCustomizedEntitlements,
+            installedApp: context.installedApp, additional: context.additionalEntitlements
+        )
+        context.pendingMemoryCapabilityRequests[resignedIdentifier] = selection.pendingMemoryRequest
+        return selection.values
     }
 
-    private func cachedEntitlements(
-        for appBundle: ALTApplication,
-        identifiers: [String]
-    ) -> [String: any Sendable]? {
-        guard let installedApp = context.installedApp else { return nil }
-        if !appBundle.isExtension { return installedApp.customEntitlements }
-        return installedApp.appExtensions.first {
-            identifiers.contains($0.bundleIdentifier) || identifiers.contains($0.resignedBundleIdentifier)
-        }?.customEntitlements
-    }
-    
     private func removeMissingAppExtensionReferences(from appBundle: ALTApplication) throws {
         // If app extensions have been removed from an app (either by AltStore or the developer),
         // we must remove all references to them from SC_Info/Manifest.plist (if it exists).
@@ -262,22 +268,4 @@ final class ResignAppOperation: BasePipelineOperation<InstallAppOperationContext
         try InfoPlistParser(dictionary: updatedManifest).write(to: manifestPlistURL)
     }
 
-    private func rewrittenTaskSchedulerIdentifiers(_ taskIDs: [String], from originalBundleID: String, to newBundleID: String) -> [String] {
-        var seen = Set<String>()
-        var rewrittenTaskIDs = [String]()
-        for taskID in taskIDs {
-            let rewritten: String
-            if taskID == newBundleID || taskID.hasPrefix(newBundleID + ".") {
-                rewritten = taskID
-            } else if taskID == originalBundleID || taskID.hasPrefix(originalBundleID + ".") {
-                rewritten = newBundleID + taskID.dropFirst(originalBundleID.count)
-            } else {
-                rewritten = taskID
-            }
-            if seen.insert(rewritten).inserted {
-                rewrittenTaskIDs.append(rewritten)
-            }
-        }
-        return rewrittenTaskIDs
-    }
 }

@@ -142,6 +142,8 @@ final class UserCustomizationOperation: BasePipelineOperation<InstallAppOperatio
         if UserDefaults.standard.customizeEntitlements {
             let authTeam = try await AuthManager.shared.getAuthenticatedTeam()
             let mainTargetID = context.targetBundleIdentifier
+            let finalMainID = context.installedApp?.resignedBundleIdentifier
+                ?? (context.appendTeamID ? mainTargetID + "." + authTeam.identifier : mainTargetID)
             self.setProgress(70)
 
             let targets: [EntitlementsTarget]
@@ -152,7 +154,9 @@ final class UserCustomizationOperation: BasePipelineOperation<InstallAppOperatio
                         id: mainTargetID,
                         name: targetAppBundle.name,
                         isExtension: false,
-                        initialEntitlements: mainEntitlements
+                        initialEntitlements: OperationEntitlements.preparingCustomization(
+                            mainEntitlements, resignedBundleIdentifier: finalMainID
+                        )
                     )
                 ]
 
@@ -164,7 +168,11 @@ final class UserCustomizationOperation: BasePipelineOperation<InstallAppOperatio
                             id: ext.bundleIdentifier,
                             name: ext.name,
                             isExtension: true,
-                            initialEntitlements: extEntitlements
+                            initialEntitlements: OperationEntitlements.preparingCustomization(
+                                extEntitlements,
+                                resignedBundleIdentifier: matchingExtension?.resignedBundleIdentifier
+                                    ?? ext.bundleIdentifier.replacingOccurrences(of: targetAppBundle.bundleIdentifier, with: finalMainID)
+                            )
                         )
                     )
                 }
@@ -175,7 +183,9 @@ final class UserCustomizationOperation: BasePipelineOperation<InstallAppOperatio
                         id: mainTargetID,
                         name: targetAppBundle.name,
                         isExtension: false,
-                        initialEntitlements: targetAppBundle.entitlements
+                        initialEntitlements: OperationEntitlements.preparingCustomization(
+                            targetAppBundle.entitlements, resignedBundleIdentifier: finalMainID
+                        )
                     )
                 ]
 
@@ -185,7 +195,11 @@ final class UserCustomizationOperation: BasePipelineOperation<InstallAppOperatio
                             id: ext.bundleIdentifier,
                             name: ext.name,
                             isExtension: true,
-                            initialEntitlements: ext.entitlements
+                            initialEntitlements: OperationEntitlements.preparingCustomization(
+                                ext.entitlements,
+                                resignedBundleIdentifier:
+                                    ext.bundleIdentifier.replacingOccurrences(of: targetAppBundle.bundleIdentifier, with: finalMainID)
+                            )
                         )
                     )
                 }
@@ -201,6 +215,7 @@ final class UserCustomizationOperation: BasePipelineOperation<InstallAppOperatio
 
             for (targetID, targetEntitlements) in result {
                 context.customEntitlementsByBundleID[targetID] = targetEntitlements
+                context.userCustomizedEntitlements.insert(targetID)
             }
 
             if let mainEntitlements = result[mainTargetID] {

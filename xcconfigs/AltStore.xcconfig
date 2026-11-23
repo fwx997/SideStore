@@ -5,4 +5,6 @@ PRODUCT_BUNDLE_IDENTIFIER = $(MAIN_BUNDLE_IDENTIFIER)
 // for ios14 and above swift runtime is included
 ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = NO
 
+SWIFT_OBJC_BRIDGING_HEADER = $(SRCROOT)/AltStore/Tools/SideStoreTools-Bridging-Header.h
+
 #include? "../local.xcconfig"

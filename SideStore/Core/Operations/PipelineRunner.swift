@@ -103,9 +103,13 @@ final class PipelineRunner: Sendable
                  handler: PipelineExecutionHandler,
                  group: RefreshGroup) async throws -> RefreshGroup
     {
+        let signingLease = try SharedCompanionSigningLock.acquire()
+        defer { signingLease?.release() }
+        let companionOperation = CompanionActivity.shared.begin("SideStore 正在安装、续签或管理应用，请完成后再切换。")
+        defer { CompanionActivity.shared.end(companionOperation) }
         // Explicit invocation context survives concurrent app operations. A
         // shortcut must never become interactive just because the app is visible.
-        try await VPNOperationContext.withOperation(isInteractive: handler.allowsVPNAppHandoff) {
+        return try await VPNOperationContext.withOperation(isInteractive: handler.allowsVPNAppHandoff) {
             try await performOperations(operations, handler: handler, group: group)
         }
     }
@@ -339,13 +343,15 @@ final class PipelineRunner: Sendable
         context.groupOperationsCount = operationsCount
         
         switch operation {
-            case .install(_, let customID), .reinstall(_, let customID):
+            case .install(let app, let customID), .reinstall(let app, let customID):
                 context.customBundleIdentifier = customID
+                context.usesRunningStoreBundle = app is InstalledApp
             case .update(_, let customID):
                 context.customBundleIdentifier = customID
                 context.isStoreUpdate = true
             case .resign(_, let mode):
                 context.alternateIconMode = mode
+                context.usesRunningStoreBundle = true
             default:
                 break
         }

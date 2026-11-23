@@ -56,7 +56,10 @@ final class VerifyAppOperation: BasePipelineOperation<InstallAppOperationContext
         // 1. Bundle ID Verification
         if UserDefaults.standard.isBundleIDVerificationEnabled {
             if !["ny.litritt.ignited", "com.litritt.ignited"].contains(where: { $0 == appBundle.bundleIdentifier }) {
-                guard appBundle.bundleIdentifier == self.context.bundleIdentifier else {
+                let isSelfBundle = context.targetsRunningStore && CombinedAppDistribution.isSelfIdentifier(
+                    appBundle.bundleIdentifier, base: StoreApp.altstoreAppID, running: Bundle.Info.activeBundleIdentifier
+                )
+                guard appBundle.bundleIdentifier == self.context.bundleIdentifier || isSelfBundle else {
                     throw VerificationError.mismatchedBundleIdentifiers(sourceBundleID: self.context.bundleIdentifier, appBundle: appBundle)
                 }
             }

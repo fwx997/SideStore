@@ -18,6 +18,7 @@ DEPENDENCY = ROOT / "Dependencies/SideSign"
 SIGNER = "Sources/CodeSigning/CodeSignerAPI.swift"
 SWIFTC = shutil.which("swiftc")
 FIXTURES = Path(__file__).parent / "fixtures"
+CAPABILITIES_PATCH = ROOT / "scripts/patches/sidesign-capabilities.patch"
 spec = importlib.util.spec_from_file_location("signing_patches", ROOT / "scripts/apply_signing_patches.py")
 patches = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(patches)
@@ -36,6 +37,14 @@ def dependency_fixture(directory: Path, source: str) -> Path:
     signer = dependency / SIGNER
     signer.parent.mkdir(parents=True)
     signer.write_text(source, encoding="utf-8", newline="\n")
+    for name in ["Sources/Models/Feature.swift", "Sources/DeveloperPortal/AppIDs.swift"]:
+        original = subprocess.run(
+            ["git", "-C", str(DEPENDENCY), "show", "HEAD:" + name],
+            capture_output=True, text=True, encoding="utf-8", check=True,
+        ).stdout
+        target = dependency / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(original, encoding="utf-8", newline="\n")
     return dependency
 
 
@@ -94,6 +103,7 @@ class MemorySigningTests(unittest.TestCase):
         directory = Path(cls.temporary.name)
         dependency = dependency_fixture(directory, original_signer())
         patches.apply_patch(dependency)
+        patches.apply_patch(dependency, CAPABILITIES_PATCH)
 
         signer = (dependency / SIGNER).read_text(encoding="utf-8")
         # CodeSignKit is replaced by the XML-recording backend in the fixture.
@@ -106,22 +116,26 @@ class MemorySigningTests(unittest.TestCase):
         routing = (operations / "ResignAppOperation.swift").read_text(encoding="utf-8")
         cache = (operations / "CacheResignedMetadataOperation.swift").read_text(encoding="utf-8")
         profiles = (operations / "FetchProvisioningProfilesOperation.swift").read_text(encoding="utf-8")
+        refresh = (operations / "RefreshAppOperation.swift").read_text(encoding="utf-8")
         extracted = "import Foundation\nfinal class RoutingOperation {\nlet context = TestContext()\n"
-        extracted += method(routing, "private func requestedEntitlements(") + "\n"
-        extracted += method(routing, "private func cachedEntitlements(") + "\n}\n"
+        extracted += method(routing, "private func requestedEntitlements(") + "\n}\n"
         extracted += "final class MetadataOperation {\n"
         extracted += method(cache, "private func cacheEntitlements(") + "\n"
         extracted += method(cache, "private func cleanupStaleFiles(") + "\n}\n"
         extracted += "final class FeatureOperation {\nlet context = TestContext()\n"
         extracted += "func debugLog(_ message: String) {}\nfunc verboseLog(_ message: String) {}\n"
         extracted += method(profiles, "func updateFeatures(") + "\n}\n"
+        extracted += "final class RefreshOperation: TestRefreshBase {\n"
+        extracted += method(refresh, "override func execute(").replace("override ", "", 1) + "\n"
+        extracted += method(refresh, "private func validateMemoryGrants(") + "\n}\n"
         (directory / "Operations.swift").write_text(extracted, encoding="utf-8")
         cls.binary = directory / "signing-regression"
         result = subprocess.run(
             [SWIFTC, "-swift-version", "6", "-parse-as-library",
              str(FIXTURES / "memory_signing_stubs.swift"), str(memory),
+             str(operation_root / "MemoryCapabilityRequestStore.swift"),
              str(DEPENDENCY / "Sources/Models/Entitlement.swift"),
-             str(DEPENDENCY / "Sources/Models/Feature.swift"), str(directory / "Defaults.swift"),
+             str(dependency / "Sources/Models/Feature.swift"), str(directory / "Defaults.swift"),
              str(directory / "Signer.swift"), str(directory / "Operations.swift"),
              str(FIXTURES / "memory_signing_main.swift"), "-o", str(cls.binary)],
             capture_output=True, text=True, encoding="utf-8", timeout=120,
@@ -169,7 +183,7 @@ class MemorySigningTests(unittest.TestCase):
     def test_profile_authorization_is_required_for_each_executable(self):
         self.run_scenario("profile-boundary")
 
-    def test_refresh_removes_memory_when_profile_grant_is_lost(self):
+    def test_signer_filter_removes_memory_when_profile_grant_is_lost(self):
         self.run_scenario("revoked-grant")
 
     def test_signer_cannot_inject_an_unapproved_memory_entitlement(self):
@@ -177,6 +191,27 @@ class MemorySigningTests(unittest.TestCase):
 
     def test_profile_features_use_team_capabilities_and_main_app_choices(self):
         self.run_scenario("features")
+
+    def test_capability_requests_preserve_cached_choices_and_renamed_extensions(self):
+        self.run_scenario("cached-features")
+
+    def test_profile_only_refresh_rejects_lost_memory_grants(self):
+        self.run_scenario("refresh-grants")
+
+    def test_direct_and_batched_refresh_validate_before_injecting_any_profile(self):
+        self.run_scenario("refresh-injection")
+
+    def test_tools_request_migrates_old_signature_without_overwriting_its_cache(self):
+        self.run_scenario("tool-request")
+
+    def test_later_explicit_disabled_or_removed_choice_clears_pending_tool_request(self):
+        self.run_scenario("tool-choices")
+
+    def test_success_consumes_only_the_tool_request_used_for_signing(self):
+        self.run_scenario("tool-consume")
+
+    def test_required_grants_stop_reinstall_but_default_requests_can_degrade(self):
+        self.run_scenario("signing-grants")
 
 
 if __name__ == "__main__":

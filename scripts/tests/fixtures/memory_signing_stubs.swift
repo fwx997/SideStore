@@ -104,6 +104,7 @@ typealias ALTApplication = AppBundle
 typealias ALTEntitlement = Entitlement
 typealias ALTFeature = Feature
 typealias ALTTeam = Team
+typealias ALTProvisioningProfile = ProvisioningProfile
 
 struct ALTAppID: Sendable {
     let bundleIdentifier: String
@@ -112,6 +113,7 @@ struct ALTAppID: Sendable {
 
 enum OperationError: Error {
     case invalidParameters(String)
+    case invalidApp(reason: String)
 }
 
 enum AppConstants {
@@ -137,12 +139,68 @@ final class InstalledExtension {
 }
 final class InstalledApp {
     var directoryURL: URL
+    var resignedBundleIdentifier = "com.example.vm.TESTTEAM"
     var customEntitlements: [String: any Sendable]?
     var appExtensions: [InstalledExtension] = []
     init(directoryURL: URL) { self.directoryURL = directoryURL }
 }
 final class TestContext {
     var customEntitlementsByBundleID: [String: [String: any Sendable]] = [:]
+    var userCustomizedEntitlements: Set<String> = []
     var additionalEntitlements: [ALTEntitlement: any Sendable] = [:]
     var installedApp: InstalledApp?
+    var pendingMemoryCapabilityRequests: [String: MemoryCapabilityRequestStore.Request] = [:]
+    var targetBundleIdentifier = "com.example.vm"
+    var useMainProfile = false
+    var provisioningProfiles: [String: ALTProvisioningProfile]?
+    var targetAppBundle: ALTApplication?
+    var bundleIdentifier = "com.example.vm"
+    var isCellularRefreshGroup = false
+    var targetCertStatus: Int?
+    let sharedContext = TestSharedContext()
+    let dbBackgroundContext = TestDatabaseContext()
+}
+
+final class TestDatabaseContext {
+    func perform<T>(_ operation: () throws -> T) async rethrows -> T { try operation() }
+}
+
+struct PendingProfileBatch {
+    let bundleID: String
+    let profiles: [String: ALTProvisioningProfile]
+    let app: InstalledApp
+    let certStatus: Int?
+}
+
+final class TestSharedContext {
+    var pending: [PendingProfileBatch] = []
+    func addPendingProfileBatch(_ batch: PendingProfileBatch) { pending.append(batch) }
+}
+
+class TestRefreshBase {
+    let context = TestContext()
+    var updates = 0
+    func executePreconditionCheck(parentProgress: Progress?) async throws {}
+    func setProgress(_ amount: Int) {}
+    func updateInstalledApp(for appBundle: ALTApplication, profiles: [String: ALTProvisioningProfile], in dbContext: TestDatabaseContext) throws -> InstalledApp {
+        updates += 1
+        return context.installedApp!
+    }
+}
+
+actor ProfileInjectionRecorder {
+    static let shared = ProfileInjectionRecorder()
+    var count = 0
+    func reset() { count = 0 }
+    func inject(_ data: Data) { count += 1 }
+}
+
+func installProvisioningProfiles(_ data: Data) async throws {
+    await ProfileInjectionRecorder.shared.inject(data)
+}
+
+actor CellularRefreshManager {
+    static let shared = CellularRefreshManager()
+    func turnOffDataIfNeeded() {}
+    func turnOnDataIfNeeded() {}
 }

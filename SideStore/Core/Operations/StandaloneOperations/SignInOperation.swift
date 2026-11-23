@@ -68,6 +68,10 @@ final class SignInOperation: BaseStandaloneOperation<StandaloneOperationContext,
     
     // Main Pipeline Execution
     override func execute(parentProgress: Progress?) async throws -> SignInResult {
+        let signingLease = try SharedCompanionSigningLock.acquire()
+        defer { signingLease?.release() }
+        let companionOperation = CompanionActivity.shared.begin("SideStore 正在登录或配置签名证书，请完成后再切换。")
+        defer { CompanionActivity.shared.end(companionOperation) }
         let startTime = CFAbsoluteTimeGetCurrent()
         debugLog("[SignInOperation] execute() started")
         defer {

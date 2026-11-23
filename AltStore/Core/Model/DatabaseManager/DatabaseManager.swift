@@ -214,9 +214,19 @@ public class DatabaseManager: @unchecked Sendable
             #endif
             
             let altStoreSource: Source
+            let isCombined = CombinedAppDistribution.requiresCompanions(at: Bundle.Info.activeBundleURL)
+            let previousStore = StoreApp.first(satisfying: NSPredicate(
+                format: "%K == %@", #keyPath(StoreApp.bundleIdentifier), StoreApp.altstoreAppID
+            ), in: context)
             
             if let source = Source.first(satisfying: NSPredicate(format: "%K == %@", #keyPath(Source.identifier), Source.altStoreIdentifier), in: context)
             {
+                altStoreSource = source
+            }
+            else if isCombined, let source = previousStore?.source
+            {
+                // Move the store's existing default source rather than keeping
+                // a second two-app catalog that could reclaim its app record.
                 altStoreSource = source
             }
             else
@@ -237,6 +247,14 @@ public class DatabaseManager: @unchecked Sendable
             {
                 storeApp = StoreApp.makeAltStoreApp(version: localAppBundle.version, buildVersion: nil, in: context)
                 storeApp.source = altStoreSource
+            }
+
+            // A three-app build can move its catalog to a private distribution.
+            // Source identifiers derive from URLs, so reconnect the existing
+            // installed store record instead of leaving it on the two-app feed.
+            if isCombined {
+                storeApp.source = altStoreSource
+                storeApp.sourceIdentifier = altStoreSource.identifier
             }
                         
             let serialNumber = CertificateManager.shared.getSigningCertificate(at: Bundle.Info.activeBundleURL)?.serialNumber
@@ -400,6 +418,9 @@ public class DatabaseManager: @unchecked Sendable
         installedApp.resignedBundleIdentifier = localAppBundle.bundleIdentifier
         installedApp.version = localAppBundle.version
         installedApp.buildVersion = localAppBundle.buildVersion
+        if CombinedAppDistribution.requiresCompanions(at: localAppBundle.fileURL) {
+            installedApp.storeBuildVersion = localAppBundle.buildVersion
+        }
         
         var status: CertificateStatus = .valid(isCrossSigned: false)
         if let binaryCert = CertificateManager.shared.getSigningCertificate(at: localAppBundle.fileURL) {

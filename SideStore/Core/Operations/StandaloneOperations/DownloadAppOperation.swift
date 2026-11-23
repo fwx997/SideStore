@@ -61,29 +61,7 @@ final class DownloadAppOperation: BasePipelineOperation<InstallAppOperationConte
         if let error = self.context.error { throw error }
         
 
-        // zh-patch v3b: SideStore/LC 自重签时, 使用"正在运行的 LC 本体"作为输入包。
-        // 仅限下载目标为自身; 普通应用必须继续下载其来源包。
-        // needs proper testing: 真机回归自身重签与普通应用安装。
-        if self.bundleIdentifier == StoreApp.altstoreAppID {
-            var candidates: [URL] = []
-            let mainURL = Bundle.main.bundleURL
-            if mainURL.lastPathComponent == "SideStoreApp.framework" {
-                // SideStore 活进程模式: Bundle.main = .../LiveContainer.app/Frameworks/SideStoreApp.framework
-                candidates.append(mainURL.deletingLastPathComponent().deletingLastPathComponent())
-            } else if mainURL.lastPathComponent.hasSuffix(".app") {
-                // 内嵌 UI 模式: Bundle.main 即 LiveContainer.app 本体
-                candidates.append(mainURL)
-            }
-            for candidateURL in candidates {
-                guard FileManager.default.fileExists(atPath: candidateURL.appendingPathComponent("Info.plist").path),
-                      let altApp = ALTApplication(fileURL: candidateURL),
-                      altApp.bundleIdentifier == StoreApp.altstoreAppID
-                else { continue }
-                debugLog("[DownloadAppOperation] zh-patch v3: self-resign using real running bundle at \(candidateURL.path)")
-                return altApp
-            }
-            debugLog("[DownloadAppOperation] zh-patch v3: real bundle not found, fallback to source download")
-        }
+        if let host = try prepareStoreSource() { return host }
 
         debugLog("[DownloadAppOperation] Downloading App: \(self.bundleIdentifier)")
 
@@ -144,6 +122,24 @@ final class DownloadAppOperation: BasePipelineOperation<InstallAppOperationConte
         }
     }
 
+    private func prepareStoreSource() throws -> ALTApplication? {
+        guard context.targetsRunningStore else { return nil }
+        let hostURL = CombinedAppDistribution.hostURL(for: Bundle.Info.activeBundleURL)
+        let isCombined = CombinedAppDistribution.requiresCompanions(at: hostURL)
+        if context.shouldUseRunningStoreBundle {
+            guard let host = ALTApplication(fileURL: hostURL) else {
+                throw OperationError.missingAppBundle(reason: "The installed host bundle could not be read for self signing.")
+            }
+            if isCombined { try CombinedAppDistribution.validatePackage(at: hostURL) }
+            debugLog("[DownloadAppOperation] Self signing the complete running host at \(hostURL.path)")
+            return host
+        }
+        if context.isStoreUpdate && isCombined {
+            self.sourceURL = try CombinedAppDistribution.updateURL(in: CombinedAppDistribution.info(at: hostURL))
+        }
+        return nil
+    }
+
     private func verify(_ version: AppVersion) throws {
         if let minOSVersion = version.minOSVersion, !ProcessInfo.processInfo.isOperatingSystemAtLeast(minOSVersion) {
             throw VerificationError.iOSVersionNotSupported(app: version, requiredOSVersion: minOSVersion)
@@ -164,6 +160,17 @@ final class DownloadAppOperation: BasePipelineOperation<InstallAppOperationConte
         }
         
         let appBundle = try await downloadIPA(from: sourceURL)
+
+        if context.targetsRunningStore,
+           CombinedAppDistribution.requiresCompanions(at: CombinedAppDistribution.hostURL(for: Bundle.Info.activeBundleURL)) {
+            try CombinedAppDistribution.validatePackage(at: appBundle.fileURL)
+            guard CombinedAppDistribution.isSelfIdentifier(
+                appBundle.bundleIdentifier, base: StoreApp.altstoreAppID, running: Bundle.Info.activeBundleIdentifier
+            ) else {
+                throw VerificationError.mismatchedBundleIdentifiers(sourceBundleID: context.bundleIdentifier, appBundle: appBundle)
+            }
+            try verifyCombinedVersion(appBundle, expected: app as? AppVersion)
+        }
         
         if self.context.bundleIdentifier == StoreApp.dolphinAppID, self.context.bundleIdentifier != appBundle.bundleIdentifier {
             // Manually update the app's bundle identifier to match the one specified in the source.
@@ -175,6 +182,10 @@ final class DownloadAppOperation: BasePipelineOperation<InstallAppOperationConte
         if !dependencies.isEmpty {
             self.debugLog("[DownloadAppOperation] Downloaded \(dependencies.count) dependencies for \(appBundle.name): \(dependencies.map(\.lastPathComponent))")
         }
+        if context.targetsRunningStore,
+           CombinedAppDistribution.requiresCompanions(at: CombinedAppDistribution.hostURL(for: Bundle.Info.activeBundleURL)) {
+            try CombinedAppDistribution.validatePackage(at: appBundle.fileURL)
+        }
         
         debugLog("[DownloadAppOperation] Moving extracted bundle from \(appBundle.fileURL.path) to destination \(self.destinationURL.path)")
         try FileManager.default.moveItem(at: appBundle.fileURL, to: self.destinationURL, shouldReplace: true)
@@ -185,6 +196,16 @@ final class DownloadAppOperation: BasePipelineOperation<InstallAppOperationConte
         }
         self.setProgress(100)
         return movedAppBundle
+    }
+
+    private func verifyCombinedVersion(_ bundle: ALTApplication, expected: AppVersion?) throws {
+        guard let expected else { return }
+        guard bundle.version == expected.version else {
+            throw VerificationError.mismatchedVersion(version: bundle.version, expectedVersion: expected.version, app: bundle)
+        }
+        if let build = expected.buildVersion, bundle.buildVersion != build {
+            throw VerificationError.mismatchedBuildVersion(bundle.buildVersion, expectedVersion: build, app: bundle)
+        }
     }
     
     func downloadIPA(from sourceURL: URL) async throws -> ALTApplication {

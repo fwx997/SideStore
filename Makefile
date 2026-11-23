@@ -193,11 +193,16 @@ signing-patches:
 	@python3 scripts/apply_signing_patches.py
 .PHONY: signing-patches
 
-build: signing-patches
+embedded-tools:
+	@python3 scripts/build_embedded_tools.py build
+.PHONY: embedded-tools
+
+build: signing-patches embedded-tools
 	@echo ">>>>>>>>> BUILD_CONFIG is set to '$(BUILD_CONFIG)', Building for $(BUILD_CONFIG) mode! <<<<<<<<<<"
 	@echo ""
 	@xcodebuild archive -archivePath ./SideStore \
 		$(COMMON_BUILD_SETTINGS)
+	@python3 scripts/build_embedded_tools.py embed --app SideStore.xcarchive/Products/Applications/SideStore.app
 
 build-and-test: signing-patches
 	@rm -rf build/tests/test-results.xcresult

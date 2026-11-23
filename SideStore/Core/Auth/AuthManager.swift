@@ -64,6 +64,8 @@ public final class AuthManager: @unchecked Sendable {
         keepAnisetteHeaders: Bool = true,
         keepSideSignHeaders: Bool = true
     ) async {
+        let companionOperation = CompanionActivity.shared.begin("SideStore 正在切换账号，请完成后再切换应用。")
+        defer { CompanionActivity.shared.end(companionOperation) }
         self.session = nil
         self.team = nil
         if !keepCertificate {

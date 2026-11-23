@@ -26,6 +26,10 @@ final class CertificateProvisioningFlow: @unchecked Sendable {
     }
     
     func resolveCertificate(for team: ALTTeam) async throws -> ALTCertificate? {
+        let signingLease = try SharedCompanionSigningLock.acquire()
+        defer { signingLease?.release() }
+        let companionOperation = CompanionActivity.shared.begin("SideStore 正在配置签名证书，请完成后再切换。")
+        defer { CompanionActivity.shared.end(companionOperation) }
         while true {
             do {
                 return try await self.performCertificateResolution(for: team)
@@ -49,12 +53,15 @@ final class CertificateProvisioningFlow: @unchecked Sendable {
     
     private func performCertificateResolution(for team: ALTTeam) async throws -> ALTCertificate? {
         let activeCert = CertificateManager.shared.activeCertificate?.certificate
+        let isBootstrap = CombinedAppBootstrap.isPending(
+            bundleURL: CombinedAppDistribution.hostURL(for: Bundle.Info.activeBundleURL)
+        )
         let isCustomCert = activeCert?.data.map { data in
             let details = parseCertificate(derData: data)
             return !details.subject.contains(team.identifier) && !details.issuer.contains(team.identifier)
         } ?? false
         
-        if isCustomCert {
+        if isCustomCert && !isBootstrap {
             debugLog("[CertificateProvisioningFlow] Custom active certificate detected (Subject OU mismatch with Team ID '\(team.identifier)'). Bypassing portal fetch.")
             return activeCert
         } else if self.skipCertificateProvisioning {
@@ -62,6 +69,11 @@ final class CertificateProvisioningFlow: @unchecked Sendable {
         } else {
             let certificate = try await self.fetchCertificate(for: team)
             try CertificateManager.shared.setActiveCertificate(certificate)
+            if let saved = CertificateManager.shared.getLocalCertificate(serialNumber: certificate.serialNumber),
+               saved.serialNumber.caseInsensitiveCompare(certificate.serialNumber) == .orderedSame,
+               !saved.privateKey.isEmpty {
+                CombinedAppBootstrap.certificateWasImported(serial: certificate.serialNumber)
+            }
             return certificate
         }
     }
@@ -80,8 +92,11 @@ final class CertificateProvisioningFlow: @unchecked Sendable {
         self.portalCertificates = portalCertificates
         
         let mainBundleCertSerial = Bundle.main.object(forInfoDictionaryKey: Bundle.Info.certificateID) as? String
+        let isBootstrap = CombinedAppBootstrap.isPending(
+            bundleURL: CombinedAppDistribution.hostURL(for: Bundle.Info.activeBundleURL)
+        )
         
-        if let activeCert = CertificateManager.shared.activeCertificate,
+        if !isBootstrap, let activeCert = CertificateManager.shared.activeCertificate,
            let certificate = portalCertificates.first(where: { $0.serialNumber == activeCert.serialNumber }) 
         {
             var keyStoreCert = activeCert.certificate
@@ -102,6 +117,13 @@ final class CertificateProvisioningFlow: @unchecked Sendable {
             cert.machineIdentifier = certificate.machineIdentifier
             debugLog("[CertificateProvisioningFlow] Using running bundle certificate (\(cert.serialNumber)) with valid private key from signable cache.")
             return cert
+        }
+
+        if isBootstrap, let serial = mainBundleCertSerial,
+           portalCertificates.contains(where: { $0.serialNumber.caseInsensitiveCompare(serial) == .orderedSame }) {
+            throw OperationError.invalidApp(reason: NSLocalizedString(
+                "The bootstrap signing certificate is still valid, but its private key could not be imported. Import the matching P12 certificate or reinstall with siboot; no certificate was replaced.", comment: ""
+            ))
         }
         
         if portalCertificates.isEmpty {

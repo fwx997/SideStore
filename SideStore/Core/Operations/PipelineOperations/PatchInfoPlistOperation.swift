@@ -42,7 +42,12 @@ final class PatchInfoPlistOperation: BasePipelineOperation<InstallAppOperationCo
             }
 
             // 2. Apply custom Info.plist if available
-            if let customPlist = self.context.customInfoPlistByBundleID[bundle.bundleIdentifier] {
+            if var customPlist = self.context.customInfoPlistByBundleID[bundle.bundleIdentifier] {
+                if context.targetsRunningStore && CombinedAppDistribution.requiresCompanions(at: targetAppBundle.fileURL) {
+                    let parser = try InfoPlistParser(plistURL: bundle.infoPlistURL)
+                    customPlist = CombinedAppDistribution.preservingSendableDistributionInfo(customPlist, original: parser.rawDictionary)
+                    self.context.customInfoPlistByBundleID[bundle.bundleIdentifier] = customPlist
+                }
                 do {
                     if !bundle.isExtension {
                         let customParser = InfoPlistParser(dictionary: customPlist)

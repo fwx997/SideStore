@@ -28,6 +28,9 @@ final class RefreshAppOperation: BasePipelineOperation<InstallAppOperationContex
         guard let appBundle = self.context.targetAppBundle else {
             throw OperationError.invalidParameters("RefreshAppOperation: context.targetAppBundle is nil")
         }
+        try await context.dbBackgroundContext.perform {
+            try self.validateMemoryGrants(profiles: profiles, appBundle: appBundle)
+        }
         self.setProgress(10)
         
         if self.context.isCellularRefreshGroup {
@@ -65,6 +68,32 @@ final class RefreshAppOperation: BasePipelineOperation<InstallAppOperationContex
         
         self.setProgress(100)
         return installedApp
+    }
+
+    private func validateMemoryGrants(profiles: [String: ALTProvisioningProfile], appBundle: ALTApplication) throws {
+        guard let installedApp = context.installedApp else {
+            throw OperationError.invalidParameters("RefreshAppOperation: context.installedApp is nil")
+        }
+        let mainProfile = profiles.values.first { $0.bundleIdentifier == installedApp.resignedBundleIdentifier }
+            ?? profiles[context.targetBundleIdentifier]
+        try OperationEntitlements.validateRefreshMemoryGrant(
+            claimed: installedApp.customEntitlements ?? appBundle.entitlements,
+            profile: mainProfile?.entitlements ?? [:],
+            bundleIdentifier: installedApp.resignedBundleIdentifier
+        )
+        for appExtension in installedApp.appExtensions {
+            let bundle = appBundle.appExtensions.first {
+                $0.bundleIdentifier == appExtension.bundleIdentifier || $0.bundleIdentifier == appExtension.resignedBundleIdentifier
+            }
+            let profile = context.useMainProfile ? mainProfile : profiles.values.first {
+                $0.bundleIdentifier == appExtension.resignedBundleIdentifier
+            }
+            try OperationEntitlements.validateRefreshMemoryGrant(
+                claimed: appExtension.customEntitlements ?? bundle?.entitlements ?? [:],
+                profile: profile?.entitlements ?? [:],
+                bundleIdentifier: appExtension.resignedBundleIdentifier
+            )
+        }
     }
     
     private func updateInstalledApp(for appBundle: ALTApplication, profiles: [String: ALTProvisioningProfile], in dbContext: NSManagedObjectContext) throws -> InstalledApp {

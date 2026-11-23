@@ -48,6 +48,10 @@ public class DeveloperPortalProxy {
     
     @discardableResult
     public func createCertificate(machineName: String, type: CertificateType = .development, team: ALTTeam? = nil) async throws -> ALTCertificate {
+        let signingLease = try SharedCompanionSigningLock.acquire()
+        defer { signingLease?.release() }
+        let operation = CompanionActivity.shared.begin("SideStore 正在申请签名证书，请完成后再切换。")
+        defer { CompanionActivity.shared.end(operation) }
         let session = try await self.getSession()
         let team = try await self.getTeam(team)
         return try await ALTAppleAPI.shared.addCertificate(machineName: machineName, type: type, to: team, session: session)
@@ -55,6 +59,10 @@ public class DeveloperPortalProxy {
     
     @discardableResult
     public func revokeCertificate(_ certificate: ALTX509Certificate, team: ALTTeam? = nil) async throws -> Bool {
+        let signingLease = try SharedCompanionSigningLock.acquire()
+        defer { signingLease?.release() }
+        let operation = CompanionActivity.shared.begin("SideStore 正在更改签名证书，请完成后再切换。")
+        defer { CompanionActivity.shared.end(operation) }
         let session = try await self.getSession()
         let team = try await self.getTeam(team)
         return try await ALTAppleAPI.shared.revokeCertificate(certificate, for: team, session: session)

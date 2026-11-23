@@ -269,7 +269,19 @@ class InstallAppOperationContext: PipelineOperationContext
     var customBundleIdentifier: String?
     var customInfoPlistByBundleID: [String: [String: any Sendable]] = [:]
     var customEntitlementsByBundleID: [String: [String: any Sendable]] = [:]
+    var userCustomizedEntitlements: Set<String> = []
     var isStoreUpdate: Bool = false
+    var usesRunningStoreBundle: Bool = false
+    var targetsRunningStore: Bool {
+        CombinedAppDistribution.isSelfIdentifier(
+            targetBundleIdentifier, base: StoreApp.altstoreAppID, running: Bundle.Info.activeBundleIdentifier
+        )
+    }
+    var shouldUseRunningStoreBundle: Bool {
+        CombinedAppDistribution.usesRunningBundle(
+            isSelf: targetsRunningStore, isStoreUpdate: isStoreUpdate, hasInstalledInput: usesRunningStoreBundle
+        )
+    }
     var targetAppBundle: ALTApplication?
 
     var provisioningProfiles: [String: ALTProvisioningProfile]?
@@ -311,6 +323,7 @@ class InstallAppOperationContext: PipelineOperationContext
     var appBundleFingerprint: String?
     var releaseTrack: ReleaseTrack?
     var additionalEntitlements: [ALTEntitlement: any Sendable] = [:]
+    var pendingMemoryCapabilityRequests: [String: MemoryCapabilityRequestStore.Request] = [:]
     
     var beginInstallationHandler: ((InstalledApp) -> Void)?
 

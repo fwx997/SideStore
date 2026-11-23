@@ -1,0 +1,172 @@
+diff --git a/Sources/Models/Feature.swift b/Sources/Models/Feature.swift
+--- a/Sources/Models/Feature.swift
++++ b/Sources/Models/Feature.swift
+@@ -75,9 +75,15 @@
+     static let extendedVirtualAddressing: Feature       = "extendedVirtualAddressing"
+     static let increasedDebuggingMemoryLimit: Feature   = "increasedDebuggingMemoryLimit"
+ 
++    /// The v1 developer-services capability for features the legacy API cannot enable.
++    var capabilityID: String? {
++        self == .increasedMemoryLimit ? "INCREASED_MEMORY_LIMIT" : nil
++    }
++
+     static let freeFeatures: Set<Feature> = [
+         .appGroups,
+-        .interAppAudio
++        .interAppAudio,
++        .increasedMemoryLimit
+     ]
+ 
+     static let paidFeatures: Set<Feature> = [
+diff --git a/Sources/DeveloperPortal/AppIDs.swift b/Sources/DeveloperPortal/AppIDs.swift
+--- a/Sources/DeveloperPortal/AppIDs.swift
++++ b/Sources/DeveloperPortal/AppIDs.swift
+@@ -73,8 +73,13 @@
+             "appIdId": appID.identifier
+         ]
+ 
++        var capabilityIDs: [String] = []
+         for (feature, value) in appID.features {
+             let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
++            if let capabilityID = feature.capabilityID, trimmed.lowercased() == "true" {
++                capabilityIDs.append(capabilityID)
++            }
++            guard feature.capabilityID == nil else { continue }
+             if trimmed.lowercased() == "true" {
+                 parameters[feature.rawValue] = true
+             } else if trimmed.lowercased() == "false" {
+@@ -93,6 +98,18 @@
+ 
+         debugLog("[SideSign] updateAppID succeeded")
+         verboseLog("[SideSign] Updated: \(updatedAppID.name) (\(updatedAppID.bundleIdentifier))")
++        if !capabilityIDs.isEmpty {
++            do {
++                try await enableCapabilities(capabilityIDs, for: updatedAppID, team: team, session: session)
++            } catch is CancellationError {
++                throw CancellationError()
++            } catch {
++                try Task.checkCancellation()
++                // A default request may be unavailable. The downloaded profile remains
++                // authoritative; callers must validate grants before a profile-only refresh.
++                debugLog("[SideSign] Capability request failed for \(updatedAppID.bundleIdentifier): \(error.localizedDescription)")
++            }
++        }
+         return updatedAppID
+     }
+ 
+diff --git a/Sources/DeveloperPortal/Capabilities.swift b/Sources/DeveloperPortal/Capabilities.swift
+new file mode 100644
+--- /dev/null
++++ b/Sources/DeveloperPortal/Capabilities.swift
+@@ -0,0 +1,111 @@
++import Foundation
++#if canImport(FoundationNetworking)
++import FoundationNetworking
++#endif
++
++public extension DeveloperPortal {
++    /// The JSON:API request used by Xcode and AltSign for Increased Memory Limit.
++    /// The result confirms acceptance of the request. The provisioning profile
++    /// is still the authority for the entitlement that a binary may claim.
++    func enableCapabilities(
++        _ capabilityIDs: [String],
++        for appID: AppID,
++        team: Team,
++        session apiSession: Session
++    ) async throws {
++        let identifiers = Array(Set(capabilityIDs)).sorted()
++        guard !identifiers.isEmpty else { return }
++        let relationships = identifiers.map { identifier -> [String: Any] in
++            let capability = ["data": ["id": identifier, "type": "capabilities"]]
++            return [
++                "type": "bundleIdCapabilities",
++                "attributes": ["enabled": true, "settings": []] as [String: Any],
++                "relationships": ["capability": capability]
++            ]
++        }
++        let attributes: [String: Any] = [
++            "name": appID.name,
++            "identifier": appID.bundleIdentifier,
++            "teamId": team.identifier,
++            "seedId": team.identifier,
++            "bundleType": "bundle",
++            "hasExclusiveManagedCapabilities": false
++        ]
++        let resource: [String: Any] = [
++            "id": appID.identifier,
++            "type": "bundleIds",
++            "attributes": attributes,
++            "relationships": ["bundleIdCapabilities": ["data": relationships]]
++        ]
++        let url = servicesBaseURL.appendingPathComponent("bundleIds").appendingPathComponent(appID.identifier)
++        var request = URLRequest(url: url, timeoutInterval: 30)
++        request.httpMethod = "PATCH"
++        request.httpBody = try JSONSerialization.data(withJSONObject: ["data": resource], options: .sortedKeys)
++        capabilityHeaders(for: apiSession).forEach { request.setValue($1, forHTTPHeaderField: $0) }
++
++        let (data, response) = try await session.data(for: request, delegate: CapabilityRedirectPolicy())
++        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
++        try validateCapabilityResponse(data, status: status, appID: appID.identifier)
++        debugLog("[SideSign] Apple accepted capabilities \(identifiers) for \(appID.bundleIdentifier)")
++    }
++}
++
++private final class CapabilityRedirectPolicy: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
++    func urlSession(
++        _ session: URLSession,
++        task: URLSessionTask,
++        willPerformHTTPRedirection response: HTTPURLResponse,
++        newRequest request: URLRequest,
++        completionHandler: @escaping @Sendable (URLRequest?) -> Void
++    ) {
++        // Apple session headers belong only to the original capability endpoint.
++        completionHandler(nil)
++    }
++}
++
++private extension DeveloperPortal {
++    func capabilityHeaders(for apiSession: Session) -> [String: String] {
++        let h = customHeaders
++        let a = apiSession.anisetteData
++        return [
++            "Content-Type": "application/vnd.api+json",
++            "Accept": "application/vnd.api+json",
++            "Accept-Language": "en-us",
++            "User-Agent": h.developerServices.userAgent,
++            "X-Apple-App-Info": h.grandSlam.authApp,
++            "X-Xcode-Version": apiSession.xcodeVersion,
++            "X-Apple-I-Identity-Id": apiSession.dsid,
++            "X-Apple-GS-Token": apiSession.authToken,
++            "X-Apple-I-MD-M": a.machineID,
++            "X-Apple-I-MD": a.oneTimePassword,
++            "X-Apple-I-MD-LU": a.localUserID,
++            "X-Apple-I-MD-RINFO": a.routingInfo,
++            "X-Mme-Device-Id": a.deviceID,
++            "X-MMe-Client-Info": a.clientInfo,
++            "X-Apple-I-Client-Time": a.clientTime,
++            "X-Apple-Locale": a.locale,
++            "X-Apple-I-Locale": a.locale,
++            "X-Apple-I-TimeZone": a.timeZone
++        ]
++    }
++
++    func validateCapabilityResponse(_ data: Data, status: Int, appID: String) throws {
++        let value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
++        if let errors = value?["errors"] as? [[String: Any]], let error = errors.first {
++            let message = error["detail"] as? String ?? error["title"] as? String ?? "Apple rejected the capability request."
++            let code = Int(error["status"] as? String ?? "") ?? status
++            throw ServerError.underlyingError(code: code, message: message)
++        }
++        guard (200..<300).contains(status) else {
++            throw ServerError.underlyingError(code: status, message: "Apple Developer Services returned HTTP \(status).")
++        }
++        if status == 204, data.isEmpty { return }
++        guard let resource = value?["data"] as? [String: Any],
++              resource["type"] as? String == "bundleIds",
++              resource["id"] as? String == appID else {
++            throw ServerError.badServerResponse(
++                reason: "Apple returned an invalid capability update response.", jsonPayload: ""
++            )
++        }
++    }
++}

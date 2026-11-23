@@ -203,7 +203,8 @@ public final class CertificateManager: @unchecked Sendable {
     }
 
     public func getLocalX509Certificate(serialNumber: String) -> ALTX509Certificate? {
-        if let cert = getLocalCertificate(serialNumber: serialNumber) {
+        if let cert = getLocalCertificate(serialNumber: serialNumber), !cert.privateKey.isEmpty,
+           serialNumber.isEmpty || cert.serialNumber.caseInsensitiveCompare(serialNumber) == .orderedSame {
             return cert.x509
         }
         if let data = Keychain.shared[certificateSerial: serialNumber] {
@@ -276,6 +277,7 @@ public final class CertificateManager: @unchecked Sendable {
            let data = try? Data(contentsOf: targetBundle.certificateURL)
         {
             let possiblePasswords: [(name: String, value: String?)] = [
+                ("bootstrapHandoff", CombinedAppBootstrap.certificatePassword(for: serialNumber)),
                 ("incomingCertSerial", serialNumber),
                 ("fallbackPassword", fallbackPassword),
                 ("activeCertSerial", activeCertificate?.certificate.serialNumber),
@@ -285,14 +287,12 @@ public final class CertificateManager: @unchecked Sendable {
                 ("nil", nil)
             ]
 
-            var signableCert: ALTCertificate?
             for (pwdName, password) in possiblePasswords {
                 verboseLog("[CertificateManager] getSignableCertificate: Attempting decryption with password source '\(pwdName)'...")
-                if let cert = try? ALTCertificate(p12Data: data, password: password) {
-                    signableCert = cert
-                    if cert.serialNumber.lowercased() == serialNumber.lowercased() {
+                if let cert = try? ALTCertificate(p12Data: data, password: password), !cert.privateKey.isEmpty {
+                    if serialNumber.isEmpty || cert.serialNumber.caseInsensitiveCompare(serialNumber) == .orderedSame {
                         debugLog("[CertificateManager] getSignableCertificate: Decrypted embedded p12 using '\(pwdName)' with matching serial '\(cert.serialNumber)'.")
-                        break
+                        return cert
                     } else {
                         verboseLog("[CertificateManager] getSignableCertificate: Decrypted embedded p12 using '\(pwdName)', but serial mismatch (certSerial: \(cert.serialNumber), targetSerial: \(serialNumber)).")
                     }
@@ -301,10 +301,6 @@ public final class CertificateManager: @unchecked Sendable {
                 }
             }
 
-            if signableCert != nil || serialNumber.isEmpty {
-                debugLog("[CertificateManager] getSignableCertificate: Returning certificate (serial: '\(signableCert?.serialNumber ?? "nil")', targetSerial: '\(serialNumber)').")
-                return signableCert
-            }
         }
         return nil
     }

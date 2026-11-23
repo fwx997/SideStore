@@ -21,6 +21,19 @@ final class StageAppOperation: BasePipelineOperation<InstallAppOperationContext,
         }
         try await super.executePreconditionCheck(parentProgress: parentProgress)
         self.setProgress(10)
+
+        // The resign pipeline has no download step. Always start from the full
+        // installed host so a stale cached two-app payload cannot remove SI.
+        if context.shouldUseRunningStoreBundle {
+            let hostURL = CombinedAppDistribution.hostURL(for: Bundle.Info.activeBundleURL)
+            if CombinedAppDistribution.requiresCompanions(at: hostURL) {
+                try CombinedAppDistribution.validatePackage(at: hostURL)
+            }
+            guard let host = ALTApplication(fileURL: hostURL) else {
+                throw OperationError.missingAppBundle(reason: "The installed host bundle could not be read for self signing.")
+            }
+            context.targetAppBundle = host
+        }
         
         if let appBundle = self.context.targetAppBundle,
            appBundle.bundle.bundleURL.path.contains("SideBackup") || appBundle.bundle.bundleURL.path.contains("AltBackup"),

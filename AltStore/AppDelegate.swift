@@ -652,6 +652,9 @@ private extension AppDelegate {
     }
     
     static func reconcileSelfReinstallationIfNeeded() {
+        CombinedAppBootstrap.completeIfInstalled(
+            at: CombinedAppDistribution.hostURL(for: Bundle.Info.activeBundleURL)
+        )
         guard let appGroup = Bundle.main.altstoreAppGroup,
               let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup) else {
             debugLog("[AppDelegate] reconcileSelfReinstallation: Failed to get App Group container.")

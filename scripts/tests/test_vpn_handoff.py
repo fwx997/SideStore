@@ -93,6 +93,15 @@ func withRemotePairingRetry<T>(_ operation: () async throws -> T) async throws -
     try await operation()
 }
 struct AppOperation {}
+enum SharedCompanionSigningLock {
+    final class Lease { func release() {} }
+    static func acquire() throws -> Lease? { nil }
+}
+final class CompanionActivity {
+    static let shared = CompanionActivity()
+    func begin(_ reason: String) -> UUID { UUID() }
+    func end(_ identifier: UUID) {}
+}
 protocol PipelineExecutionHandler { var allowsVPNAppHandoff: Bool { get } }
 class UIViewController { var presentedViewController: UIViewController? }
 final class ResignAltStoreViewController: UIViewController {}

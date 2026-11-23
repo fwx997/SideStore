@@ -67,6 +67,15 @@ final class RemoveAppExtensionsOperation: BasePipelineOperation<InstallAppOperat
         guard let targetAppBundle = context.targetAppBundle else {
             throw OperationError.invalidParameters("RemoveAppExtensionsOperation: context.appBundle is nil")
         }
+
+        if context.targetsRunningStore && CombinedAppDistribution.requiresCompanions(at: targetAppBundle.fileURL) {
+            try CombinedAppDistribution.validatePackage(at: targetAppBundle.fileURL)
+            // LiveProcess enables background renewal; SI's extension supplies
+            // Live Activities. Keep the complete host with one profile policy.
+            context.useMainProfile = true
+            self.setProgress(100)
+            return targetAppBundle
+        }
         
         // target App Bundle doesn't contain extensions so don't bother
         guard !targetAppBundle.appExtensions.isEmpty else {

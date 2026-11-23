@@ -63,6 +63,7 @@ class MyAppsViewController: UICollectionViewController
     private var _imagePickerInstalledApp: InstalledApp?
     private var _viewDidAppear = false
     private var pendingImportURL: URL?
+    private var combinedSelfSignButton: UIBarButtonItem?
     
     private var minimuxerStatusCheckTask: Task<Void, Never>?
     
@@ -161,6 +162,7 @@ class MyAppsViewController: UICollectionViewController
     override func viewIsAppearing(_ animated: Bool)
     {
         super.viewIsAppearing(animated)
+        updateCombinedSelfSignButton()
         
         Task { @MainActor [weak self] in
             guard let self = self else { return }
@@ -201,6 +203,57 @@ class MyAppsViewController: UICollectionViewController
     override func viewWillDisappear(_ animated: Bool)
     {
         super.viewWillDisappear(animated)
+    }
+
+    private func updateCombinedSelfSignButton() {
+        let host = CombinedAppDistribution.hostURL(for: Bundle.Info.activeBundleURL)
+        CombinedAppBootstrap.completeIfInstalled(at: host)
+        let pending = CombinedAppBootstrap.isPending(bundleURL: host)
+        if pending && combinedSelfSignButton == nil {
+            let button = UIBarButtonItem(title: NSLocalizedString("Sign Combined App", comment: ""),
+                                         style: .plain, target: self, action: #selector(confirmCombinedSelfSign))
+            combinedSelfSignButton = button
+            navigationItem.rightBarButtonItems = (navigationItem.rightBarButtonItems ?? []) + [button]
+        }
+        if !pending, let button = combinedSelfSignButton {
+            navigationItem.rightBarButtonItems?.removeAll { $0 === button }
+            combinedSelfSignButton = nil
+        }
+    }
+
+    @objc private func confirmCombinedSelfSign() {
+        let message = NSLocalizedString("siboot already installed a signed combined app. You can now verify SideStore's signing by reinstalling the complete package with the same certificate. This is optional; the app will return to the Home Screen while iOS finishes installing.", comment: "")
+        let alert = UIAlertController(title: NSLocalizedString("Sign Combined App", comment: ""), message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: NSLocalizedString("Later", comment: ""), style: .cancel))
+        alert.addAction(UIAlertAction(title: NSLocalizedString("Start Signing", comment: ""), style: .default) { [weak self] _ in
+            self?.startCombinedSelfSign()
+        })
+        present(alert, animated: true)
+    }
+
+    private func startCombinedSelfSign() {
+        guard SSCompanionActivityBridge.switchBlockReason() == nil else { return }
+        guard AuthManager.shared.isAuthenticated, CertificateManager.shared.activeCertificate != nil,
+              let installed = InstalledApp.fetchAltStore(in: DatabaseManager.shared.viewContext) else {
+            showCombinedSelfSignError(NSLocalizedString("Sign in to SideStore and finish pairing before signing the combined app.", comment: ""))
+            return
+        }
+        combinedSelfSignButton?.isEnabled = false
+        AppManager.shared.install(.app(installed), presentingViewController: self) { [weak self] result in
+            Task { @MainActor in self?.finishCombinedSelfSign(result) }
+        }
+    }
+
+    private func finishCombinedSelfSign(_ result: Result<InstalledApp, Error>) {
+        combinedSelfSignButton?.isEnabled = true
+        if case .failure(let error) = result { showCombinedSelfSignError(error.localizedDescription) }
+        updateCombinedSelfSignButton()
+    }
+
+    private func showCombinedSelfSignError(_ message: String) {
+        let alert = UIAlertController(title: NSLocalizedString("Sign Combined App", comment: ""), message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: NSLocalizedString("OK", comment: ""), style: .default))
+        present(alert, animated: true)
     }
     
     private func findView(in view: UIView, where predicate: (UIView) -> Bool) -> UIView? {

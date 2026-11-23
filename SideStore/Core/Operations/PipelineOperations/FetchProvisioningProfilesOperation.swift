@@ -232,12 +232,16 @@ private extension FetchProvisioningProfilesOperation{
     
     func updateFeatures(for appID: ALTAppID, targetAppBundle: ALTApplication, team: ALTTeam) async throws -> ALTAppID {
         let bundleID = targetAppBundle.bundleIdentifier
-        let customEntitlements = self.context.customEntitlementsByBundleID[bundleID]
-        let entitlements = OperationEntitlements.merging(
-            customEntitlements ?? targetAppBundle.entitlements,
-            additional: targetAppBundle.isExtension ? [:] : context.additionalEntitlements,
-            preservingMemorySelection: customEntitlements != nil
-        )
+        let identifiers = targetAppBundle.isExtension
+            ? [bundleID, appID.bundleIdentifier]
+            : [context.targetBundleIdentifier, bundleID, appID.bundleIdentifier]
+        let entitlements = OperationEntitlements.requested(
+            for: targetAppBundle, identifiers: identifiers,
+            resignedBundleIdentifier: appID.bundleIdentifier,
+            custom: context.customEntitlementsByBundleID,
+            explicitMemorySelections: context.userCustomizedEntitlements,
+            installedApp: context.installedApp, additional: context.additionalEntitlements
+        ).values ?? targetAppBundle.entitlements
         
         guard let allowedFeatures = team.type.allowedFeatures else {
             throw OperationError.invalidParameters("Cannot update features for unknown team type.")
@@ -276,7 +280,10 @@ private extension FetchProvisioningProfilesOperation{
         
         // check if we really need to make a update on portal
         let currentFeatures = appID.features
-        let needsUpdate = targetFeatures.contains { feature, targetValue in
+        // Legacy App ID listings may omit capabilities enabled through v1.
+        // Reassert the requested grant before issuing every replacement profile.
+        let requestsCapability = targetFeatures.contains { $0.key.capabilityID != nil && $0.value == "true" }
+        let needsUpdate = requestsCapability || targetFeatures.contains { feature, targetValue in
             // if not available yet assume feature = off
             let currentValue = currentFeatures[feature] ?? "false"
             return currentValue != targetValue

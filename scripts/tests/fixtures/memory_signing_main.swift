@@ -283,12 +283,253 @@ func profileFeatures(_ root: URL) async throws {
     let paid = try await operation.updateFeatures(for: initial, targetAppBundle: app, team: Team(type: .paid))
     precondition(paid.features[.increasedMemoryLimit] == "true", "An allowed memory capability was not requested")
     let free = try await operation.updateFeatures(for: initial, targetAppBundle: app, team: Team(type: .free))
-    precondition(free.features[.increasedMemoryLimit] == nil, "The free-team capability filter was bypassed")
+    precondition(free.features[.increasedMemoryLimit] == "true", "The free team did not request its memory capability")
+    precondition(free.features[.extendedVirtualAddressing] == nil, "Extended addressing was enabled for a free team")
     let helper = try await operation.updateFeatures(for: initial, targetAppBundle: app.appExtensions.first!, team: Team(type: .paid))
     precondition(helper.features[.increasedMemoryLimit] == nil, "Main-app defaults leaked into helper provisioning")
     operation.context.customEntitlementsByBundleID[mainID] = [memory: false]
     let disabled = try await operation.updateFeatures(for: paid, targetAppBundle: app, team: Team(type: .paid))
     precondition(disabled.features[.increasedMemoryLimit] == "false", "Defaults re-enabled an explicit disabled capability")
+}
+
+func cachedProfileFeatures(_ root: URL) async throws {
+    let (app, _) = try fixture(at: root, original: [memory: true])
+    let operation = FeatureOperation()
+    operation.context.additionalEntitlements = OperationEntitlements.defaultAdditionalEntitlements
+    let installed = InstalledApp(directoryURL: root.appendingPathComponent("cache"))
+    operation.context.installedApp = installed
+    let initial = ALTAppID(bundleIdentifier: mainID, features: [.appGroups: "true"])
+    let cachedChoices: [[String: any Sendable]] = [[memory: false], [:], [memory: true]]
+    for cached in cachedChoices {
+        installed.customEntitlements = cached
+        let updated = try await operation.updateFeatures(for: initial, targetAppBundle: app, team: Team())
+        let expected = cached[memory].map { ($0 as! Bool) ? "true" : "false" }
+        precondition(updated.features[.increasedMemoryLimit] == expected, "The profile request disagrees with the cached signing choice")
+    }
+    let helper = app.appExtensions.first!
+    installed.appExtensions = [InstalledExtension(helperID, entitlements: [memory: true])]
+    let helperAppID = ALTAppID(bundleIdentifier: helperID, features: [.appGroups: "true"])
+    let enabled = try await operation.updateFeatures(for: helperAppID, targetAppBundle: helper, team: Team())
+    precondition(enabled.features[.increasedMemoryLimit] == "true", "The extension's own cached request was lost")
+    operation.context.customEntitlementsByBundleID[mainID] = [:]
+    let removed = try await operation.updateFeatures(for: initial, targetAppBundle: app, team: Team())
+    precondition(removed.features[.increasedMemoryLimit] == nil, "An explicit deletion was not preserved")
+    operation.context.targetBundleIdentifier = "com.example.renamed"
+    operation.context.customEntitlementsByBundleID["com.example.renamed"] = [memory: true]
+    let renamed = try await operation.updateFeatures(for: initial, targetAppBundle: app, team: Team())
+    precondition(renamed.features[.increasedMemoryLimit] == "true", "An explicit choice under a custom main ID was lost")
+}
+
+func refreshProfileGrants(_ root: URL) throws {
+    let (app, profiles) = try fixture(at: root, original: [memory: true])
+    let operation = RefreshOperation()
+    let installed = InstalledApp(directoryURL: root)
+    installed.customEntitlements = [memory: true]
+    operation.context.installedApp = installed
+    var grants = Dictionary(uniqueKeysWithValues: profiles.map { ($0.bundleIdentifier, $0) })
+    try operation.validateMemoryGrants(profiles: grants, appBundle: app)
+    let invalidGrants: [(any Sendable)?] = [nil, false, 1, "true"]
+    for grant in invalidGrants {
+        var entitlements: [String: any Sendable] = [:]
+        if let grant { entitlements[memory] = grant }
+        grants[mainID] = ProvisioningProfile(name: "Missing grant", bundleIdentifier: mainID,
+            teamIdentifier: "TESTTEAM", entitlements: entitlements, data: Data())
+        do {
+            try operation.validateMemoryGrants(profiles: grants, appBundle: app)
+            preconditionFailure("A profile-only refresh accepted an absent or invalid memory grant")
+        } catch OperationError.invalidApp(let reason) {
+            precondition(reason.contains("Refresh stopped"), reason)
+        }
+    }
+    grants[mainID] = profiles[0]
+    installed.appExtensions = [InstalledExtension(helperID, entitlements: [memory: true])]
+    grants.removeValue(forKey: helperID)
+    do {
+        try operation.validateMemoryGrants(profiles: grants, appBundle: app)
+        preconditionFailure("The main app's grant was incorrectly used for its helper")
+    } catch OperationError.invalidApp(let reason) {
+        precondition(reason.contains(helperID), reason)
+    }
+    operation.context.useMainProfile = true
+    try operation.validateMemoryGrants(profiles: grants, appBundle: app)
+    installed.customEntitlements = [:]
+    installed.appExtensions = []
+    try operation.validateMemoryGrants(profiles: [:], appBundle: app)
+}
+
+func refreshInjectionBoundary(_ root: URL) async throws {
+    let (app, profiles) = try fixture(at: root, original: [memory: true])
+    let grants = Dictionary(uniqueKeysWithValues: profiles.map { ($0.bundleIdentifier, $0) })
+    for batched in [false, true] {
+        let operation = RefreshOperation()
+        let installed = InstalledApp(directoryURL: root)
+        installed.customEntitlements = [memory: true]
+        operation.context.installedApp = installed
+        operation.context.targetAppBundle = app
+        operation.context.provisioningProfiles = [:]
+        operation.context.isCellularRefreshGroup = batched
+        await ProfileInjectionRecorder.shared.reset()
+        do {
+            _ = try await operation.execute(parentProgress: nil)
+            preconditionFailure("A refresh with no memory grant reached injection")
+        } catch OperationError.invalidApp {}
+        let rejectedCount = await ProfileInjectionRecorder.shared.count
+        precondition(rejectedCount == 0 && operation.context.sharedContext.pending.isEmpty)
+        precondition(operation.updates == 0, "Rejected refresh changed the installed metadata")
+
+        operation.context.provisioningProfiles = grants
+        _ = try await operation.execute(parentProgress: nil)
+        let acceptedCount = await ProfileInjectionRecorder.shared.count
+        precondition(acceptedCount == (batched ? 0 : grants.count))
+        precondition(operation.context.sharedContext.pending.count == (batched ? 1 : 0))
+        precondition(operation.updates == (batched ? 0 : 1))
+    }
+}
+
+func toolMemoryRequest(_ root: URL) async throws {
+    let suite = "memory-request-test." + UUID().uuidString
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let store = MemoryCapabilityRequestStore(defaults: defaults)
+    let (app, profiles) = try fixture(at: root, original: [:])
+    let installed = InstalledApp(directoryURL: root.appendingPathComponent("cache"))
+    installed.customEntitlements = [:]
+    store.recordEnabledCapabilityRequests(for: mainID, capabilities: ["EXTENDED_VIRTUAL_ADDRESSING"])
+    precondition(store.request(for: mainID) == nil)
+    store.recordEnabledCapabilityRequests(for: mainID, capabilities: ["INCREASED_MEMORY_LIMIT"])
+    let selection = OperationEntitlements.requested(
+        for: app, identifiers: ["com.example.vm", mainID], resignedBundleIdentifier: mainID,
+        custom: [:], installedApp: installed,
+        additional: OperationEntitlements.defaultAdditionalEntitlements, requestStore: store
+    )
+    precondition(selection.pendingMemoryRequest != nil)
+    expect(selection.values?[memory] as? Bool, true, "Tool request upgrades a stripped .42 cache")
+    expect(installed.customEntitlements?[memory] as? Bool, nil, "Request must not change the actual-signature cache")
+    expect(app.entitlements[memory] as? Bool, nil, "Request must not claim that the old binary changed")
+    let displayed = OperationEntitlements.preparingCustomization([:], resignedBundleIdentifier: mainID, requestStore: store)
+    expect(displayed[memory] as? Bool, true, "The customization page must show the pending request")
+
+    let helper = app.appExtensions.first!
+    let helperSelection = OperationEntitlements.requested(
+        for: helper, identifiers: [helperID], resignedBundleIdentifier: helperID,
+        custom: [:], installedApp: installed, additional: [:], requestStore: store
+    )
+    precondition(helperSelection.pendingMemoryRequest == nil, "The main request leaked into an extension")
+    let anotherTeam = OperationEntitlements.requested(
+        for: app, identifiers: [mainID, "com.example.vm.OTHERTEAM"], resignedBundleIdentifier: "com.example.vm.OTHERTEAM",
+        custom: [:], installedApp: installed, additional: [:], requestStore: store
+    )
+    precondition(anotherTeam.pendingMemoryRequest == nil, "A tool request crossed signing teams")
+
+    try await AppBundleSigner(team: Team(), keyStore: KeyStore()).signApp(
+        at: app.fileURL, provisioningProfiles: profiles, customEntitlements: [mainID: selection.values!]
+    )
+    try MetadataOperation().cacheEntitlements(
+        for: installed, targetAppBundle: app,
+        pendingRequests: [mainID: selection.pendingMemoryRequest!], requestStore: store
+    )
+    expect(app.entitlements[memory] as? Bool, true, "The requested entitlement reached the binary")
+    precondition(store.request(for: mainID) == nil, "Completed signing did not consume the applied request")
+}
+
+func toolMemoryChoices(_ root: URL) throws {
+    let suite = "memory-choice-test." + UUID().uuidString
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let store = MemoryCapabilityRequestStore(defaults: defaults)
+    let (app, _) = try fixture(at: root, original: [:])
+    let installed = InstalledApp(directoryURL: root)
+    installed.customEntitlements = [:]
+    for choice in [[memory: false], [:]] as [[String: any Sendable]] {
+        store.recordEnabledCapabilityRequests(for: mainID, capabilities: ["INCREASED_MEMORY_LIMIT"])
+        let selected = OperationEntitlements.requested(
+            for: app, identifiers: [mainID], resignedBundleIdentifier: mainID,
+            custom: [mainID: choice], explicitMemorySelections: [mainID], installedApp: installed,
+            additional: OperationEntitlements.defaultAdditionalEntitlements, requestStore: store
+        )
+        precondition(selected.pendingMemoryRequest == nil && store.request(for: mainID) == nil)
+        expect(selected.values?[memory] as? Bool, choice[memory] as? Bool, "The later user choice must win")
+    }
+    store.recordEnabledCapabilityRequests(for: mainID, capabilities: ["INCREASED_MEMORY_LIMIT"])
+    let loadedCache = OperationEntitlements.requested(
+        for: app, identifiers: [mainID], resignedBundleIdentifier: mainID,
+        custom: [mainID: [:]], explicitMemorySelections: [], installedApp: installed,
+        additional: [:], requestStore: store
+    )
+    expect(loadedCache.values?[memory] as? Bool, true, "Loading the old cache is not an explicit user deletion")
+    precondition(store.request(for: mainID) != nil)
+    let invalid = OperationEntitlements.requested(
+        for: app, identifiers: [mainID], resignedBundleIdentifier: mainID,
+        custom: [mainID: [memory: "false"]], explicitMemorySelections: [mainID], installedApp: installed,
+        additional: [:], requestStore: store
+    )
+    precondition(invalid.values?[memory] as? String == "false")
+    precondition(store.request(for: mainID) != nil, "An invalid typed value was treated as a valid deletion")
+}
+
+func toolMemoryConsumption(_ root: URL) throws {
+    let suite = "memory-consumption-test." + UUID().uuidString
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let store = MemoryCapabilityRequestStore(defaults: defaults)
+    let (app, _) = try fixture(at: root, original: [:])
+    let installed = InstalledApp(directoryURL: root.appendingPathComponent("cache"))
+    store.recordEnabledCapabilityRequests(for: mainID, capabilities: ["INCREASED_MEMORY_LIMIT"])
+    let first = store.request(for: mainID)!
+    let metadata = MetadataOperation()
+    try metadata.cacheEntitlements(for: installed, targetAppBundle: app,
+                                   pendingRequests: [mainID: first], requestStore: store)
+    precondition(store.request(for: mainID) == first, "An ungranted request was consumed")
+    try writePlist([memory: true], to: app.fileURL.appendingPathComponent("Signature.plist"))
+    try metadata.cacheEntitlements(for: installed, targetAppBundle: app, requestStore: store)
+    precondition(store.request(for: mainID) == first, "A refresh without a signing receipt consumed the request")
+
+    let brokenCache = root.appendingPathComponent("not-a-directory")
+    try Data("cache write failure".utf8).write(to: brokenCache)
+    do {
+        try metadata.cacheEntitlements(for: InstalledApp(directoryURL: brokenCache), targetAppBundle: app,
+                                       pendingRequests: [mainID: first], requestStore: store)
+        preconditionFailure("The invalid cache path unexpectedly succeeded")
+    } catch {}
+    precondition(store.request(for: mainID) == first, "A failed cache write consumed the request")
+
+    store.recordEnabledCapabilityRequests(for: mainID, capabilities: ["INCREASED_MEMORY_LIMIT"])
+    let second = store.request(for: mainID)!
+    precondition(first != second)
+    try metadata.cacheEntitlements(for: installed, targetAppBundle: app,
+                                   pendingRequests: [mainID: first], requestStore: store)
+    precondition(store.request(for: mainID) == second, "An older operation consumed a newer request")
+    try metadata.cacheEntitlements(for: installed, targetAppBundle: app,
+                                   pendingRequests: [mainID: second], requestStore: store)
+    precondition(store.request(for: mainID) == nil)
+}
+
+func signingMemoryGrants() throws {
+    let request = MemoryCapabilityRequestStore.Request(bundleIdentifier: mainID, revision: "test-revision")
+    let required: [([String: any Sendable]?, MemoryCapabilityRequestStore.Request?)] = [
+        (nil, request), ([memory: true], nil)
+    ]
+    for (cached, pending) in required {
+        do {
+            try OperationEntitlements.validateSigningMemoryGrant(
+                requested: [memory: true], cached: cached, pendingRequest: pending, profile: [:], bundleIdentifier: mainID
+            )
+            preconditionFailure("Reinstall would silently remove a requested or existing memory grant")
+        } catch OperationError.invalidApp(let reason) {
+            precondition(reason.contains("Reinstall stopped"))
+        }
+        try OperationEntitlements.validateSigningMemoryGrant(
+            requested: [memory: true], cached: cached, pendingRequest: pending, profile: [memory: true], bundleIdentifier: mainID
+        )
+    }
+    try OperationEntitlements.validateSigningMemoryGrant(
+        requested: [memory: true], cached: nil, pendingRequest: nil, profile: [:], bundleIdentifier: mainID
+    )
+    for disabled in [[memory: false], [:]] as [[String: any Sendable]] {
+        try OperationEntitlements.validateSigningMemoryGrant(
+            requested: disabled, cached: [memory: true], pendingRequest: nil, profile: [:], bundleIdentifier: mainID
+        )
+    }
 }
 
 @main
@@ -312,6 +553,13 @@ struct MemorySigningRegression {
         case "revoked-grant": try await revokedGrant(root)
         case "injected": try await rejectInjectedSignature(root)
         case "features": try await profileFeatures(root)
+        case "cached-features": try await cachedProfileFeatures(root)
+        case "refresh-grants": try refreshProfileGrants(root)
+        case "refresh-injection": try await refreshInjectionBoundary(root)
+        case "tool-request": try await toolMemoryRequest(root)
+        case "tool-choices": try toolMemoryChoices(root)
+        case "tool-consume": try toolMemoryConsumption(root)
+        case "signing-grants": try signingMemoryGrants()
         default: preconditionFailure("Unknown scenario")
         }
         print("PASS", CommandLine.arguments[1])

@@ -1947,3 +1947,20 @@
 "VPN is not connected. Open your local VPN app and connect it, then return and retry. You can choose the app in Settings > VPN Auto-Open." = "尚未开启 VPN。请打开本地 VPN 应用并连接，然后返回重试。可在“设置 → VPN 自动跳转”中选择要打开的应用。";
 "Connect your local VPN and retry. Background shortcuts will not open the VPN app automatically." = "请连接本地 VPN 后重试。快捷指令在后台刷新时不会自动打开 VPN 应用。";
 "Could not transfer files to the device. Check the local VPN connection and pairing file, then try again. Technical details are available in the error log." = "无法向设备传输文件。请检查本地 VPN 连接和配对文件后重试，技术详情可在错误日志中查看。";
+
+/* Signing capabilities */
+"Apple did not grant Increased Memory Limit for %@. Refresh stopped before replacing its provisioning profile." = "Apple 未授予 %@ 增加内存上限权限。已停止续签，保留当前描述文件。";
+"Apple did not grant Increased Memory Limit for %@. Reinstall stopped before changing the app's signature." = "Apple 未授予 %@ 增加内存上限权限。已停止重装，保留当前应用签名。";
+"The installed memory entitlement must be a Boolean." = "已安装应用的内存授权项必须为布尔值。";
+
+/* Combined app signing */
+"This update is not a complete LiveContainer + SideStore + SideInstaller package. The installed apps were kept." = "更新包不包含完整的 LiveContainer、SideStore 和 SideInstaller。已保留当前安装。";
+"This combined build has no valid HTTPS update URL. Install a complete combined IPA to update it." = "此组合包未配置有效的 HTTPS 更新地址，请使用完整三合一 IPA 更新。";
+"SideInstaller is using signing or device services. Try again after its operation finishes." = "SideInstaller 正在使用签名或设备服务，请完成其操作后重试。";
+"The combined apps could not open their shared operation lock. Reinstall the complete combined package with its App Group enabled." = "组合应用无法使用共享操作锁，请保留 App Group 权限重新安装完整组合包。";
+"Sign Combined App" = "自签三合一";
+"siboot already installed a signed combined app. You can now verify SideStore's signing by reinstalling the complete package with the same certificate. This is optional; the app will return to the Home Screen while iOS finishes installing." = "siboot 已安装签好的组合包。现在可以使用相同证书，由 SideStore 重签并覆盖安装完整三合一，验证后续签名流程。此步骤可稍后进行；安装时会回到主屏幕，等待系统完成。";
+"Later" = "稍后";
+"Start Signing" = "开始自签";
+"Sign in to SideStore and finish pairing before signing the combined app." = "请先登录 SideStore 并完成配对，再自签三合一。";
+"The bootstrap signing certificate is still valid, but its private key could not be imported. Import the matching P12 certificate or reinstall with siboot; no certificate was replaced." = "首装使用的签名证书仍有效，但未能导入其私钥。请导入对应的 P12，或使用 siboot 重新安装；未替换任何证书。";

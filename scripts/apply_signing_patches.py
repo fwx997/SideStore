@@ -8,6 +8,7 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 PATCH = ROOT / "scripts/patches/sidesign-memory-entitlements.patch"
+CAPABILITY_PATCH = ROOT / "scripts/patches/sidesign-capabilities.patch"
 
 
 def apply_patch(dependency: Path, patch: Path = PATCH) -> str:
@@ -39,6 +40,7 @@ def main() -> None:
     parser.add_argument("--dependency", type=Path, default=ROOT / "Dependencies/SideSign")
     args = parser.parse_args()
     print("SideSign memory-entitlement fix:", apply_patch(args.dependency))
+    print("SideSign memory-capability fix:", apply_patch(args.dependency, CAPABILITY_PATCH))
 
 
 if __name__ == "__main__":

@@ -37,7 +37,10 @@ final class CacheResignedMetadataOperation: BasePipelineOperation<InstallAppOper
         
         try cacheProvisioningProfiles(for: installedApp)
         try cacheInfoPlist(for: installedApp, targetAppBundle: targetAppBundle)
-        try cacheEntitlements(for: installedApp, targetAppBundle: targetAppBundle)
+        try cacheEntitlements(
+            for: installedApp, targetAppBundle: targetAppBundle,
+            pendingRequests: context.pendingMemoryCapabilityRequests
+        )
         
         self.setProgress(100)
     }
@@ -78,7 +81,12 @@ final class CacheResignedMetadataOperation: BasePipelineOperation<InstallAppOper
         }
     }
     
-    private func cacheEntitlements(for app: InstalledApp, targetAppBundle: ALTApplication) throws {
+    private func cacheEntitlements(
+        for app: InstalledApp,
+        targetAppBundle: ALTApplication,
+        pendingRequests: [String: MemoryCapabilityRequestStore.Request] = [:],
+        requestStore: MemoryCapabilityRequestStore = .shared
+    ) throws {
         let entitlementsDirectory = app.directoryURL.appendingPathComponent("Entitlements")
         try FileManager.default.createDirectory(at: entitlementsDirectory, withIntermediateDirectories: true, attributes: nil)
         
@@ -95,6 +103,11 @@ final class CacheResignedMetadataOperation: BasePipelineOperation<InstallAppOper
             let plistData = try PropertyListSerialization.data(fromPropertyList: entitlements, format: .xml, options: 0)
             try plistData.write(to: fileURL, options: .atomic)
             debugLog("[CacheResignedMetadataOperation] Cached Entitlements for \(resignedID) to \(fileURL.path)")
+        }
+        for bundle in targetAppBundle.allAppBundles {
+            guard let request = pendingRequests[bundle.bundleIdentifier],
+                  OperationEntitlements.isMemoryEnabled(bundle.entitlements) else { continue }
+            requestStore.consume(request)
         }
     }
     
@@ -115,6 +128,9 @@ final class CacheResignedMetadataOperation: BasePipelineOperation<InstallAppOper
         let bundleID = app.bundleIdentifier
         let resignedBundleID = app.resignedBundleIdentifier
         let appDirectoryURL = app.directoryURL
+        if let request = MemoryCapabilityRequestStore.shared.request(for: resignedBundleID) {
+            MemoryCapabilityRequestStore.shared.consume(request)
+        }
         
         ProfileManager.shared.setAssignedProfile(nil, for: bundleID)
         if resignedBundleID != bundleID {
