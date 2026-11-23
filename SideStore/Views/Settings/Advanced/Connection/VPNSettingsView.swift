@@ -35,7 +35,7 @@ struct VPNSettingsView: View {
         Section {
             Toggle("Automatically Open VPN App", isOn: $autoOpen)
         } footer: {
-            Text("When a foreground operation needs the local VPN and it is not connected, open the selected app. Connect the VPN, return here, and retry. Background refresh will not open another app.")
+            Text("With this option on and LocalDevVPN selected, foreground operations start the VPN when needed and return here automatically. SideStore checks the connection before continuing. Background refresh and operations started by Shortcuts will not open another app.")
         }
     }
 
@@ -113,7 +113,7 @@ struct VPNSettingsView: View {
             SwiftUI.Button("Open Selected VPN App") { Task { await openSelectedApp() } }
                 .disabled(isOpening || !canTestSelection)
         } footer: {
-            Text("Opening an app does not confirm that its VPN is connected. Enable the VPN in that app before retrying your operation.")
+            Text("This button tests opening the selected app. Returning does not confirm that the VPN is connected. For a shortcut or custom URL, you may need to connect the VPN, return here, and retry your operation.")
         }
     }
 

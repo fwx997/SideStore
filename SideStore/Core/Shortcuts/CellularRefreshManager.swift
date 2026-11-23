@@ -121,7 +121,7 @@ public final class CellularRefreshManager: @unchecked Sendable {
               onDelay: turnOnDataBaseDelayOverride ?? AppConstants.Shortcuts.defaultTurnOnDataBaseDelay)
     }
 
-    private static var callbackScheme: String {
+    static var callbackScheme: String {
         // Read the physical host's plist, bypassing LiveContainer's active-bundle hooks.
         var hostURL = Bundle.main.bundleURL
         while hostURL.pathExtension != "app" && hostURL.path != "/" {

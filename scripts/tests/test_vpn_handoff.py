@@ -45,10 +45,10 @@ final class UIScene: Hashable {
     var pendingOpen: CheckedContinuation<Bool, Never>?
     func open(_ url: URL) async -> Bool {
         opens.append(url)
+        onOpen?()
         if shouldSuspendOpen {
             return await withCheckedContinuation {
                 pendingOpen = $0
-                onOpen?()
             }
         }
         return acceptsURL
@@ -78,6 +78,7 @@ final class FakeMinimuxer {
 let minimuxer = FakeMinimuxer()
 final class CellularRefreshManager {
     static let shared = CellularRefreshManager()
+    static var callbackScheme = "sidestore-test-instance"
     var isEnabled = false
 }
 extension UserDefaults {
@@ -115,13 +116,16 @@ final class PipelineHandler: PipelineExecutionHandler {
 final class AppManager {
     // PRODUCTION_HANDLER_FACTORY
 }
-final class RefreshGroup { var completed = false }
+final class RefreshGroup {
+    var completionCount = 0
+    var completed: Bool { completionCount > 0 }
+}
 final class PipelineRunner {
     // PRODUCTION_PIPELINE_ENTRY
     private func performOperations(_ operations: [AppOperation], handler: PipelineExecutionHandler,
                                    group: RefreshGroup) async throws -> RefreshGroup {
         try await ensureMinimuxerReady()
-        group.completed = true
+        group.completionCount += 1
         return group
     }
 }
@@ -139,6 +143,11 @@ final class PipelineRunner {
         try await manualPreflight()
         try await sameOperationOpensOnce()
         try await overlappingOpenRequests()
+        try await returnsAndResumes()
+        try await returnWithoutVPN()
+        try await waiterCancellation()
+        try await totalTimeout()
+        try await manualDestinations()
         try await transportFailures()
         try await cancellation()
         print("PASS: preferences, VPN detection, foreground handoff, and unchanged background shortcut flow")
@@ -147,7 +156,12 @@ final class PipelineRunner {
     static func preferences() throws {
         let defaults = UserDefaults.standard
         precondition(VPNAppPreferences.automaticallyOpens())
-        precondition(VPNAppPreferences.launchURL()?.absoluteString == "localdevvpn://")
+        for scheme in ["sidestore-instance-one", "livecontainer2", "livecontainer-TEAM123456"] {
+            let local = VPNAppPreferences.launchURL(callbackScheme: scheme)!
+            let localParts = URLComponents(url: local, resolvingAgainstBaseURL: false)!
+            precondition(local.scheme == "localdevvpn" && local.host == "enable")
+            precondition(localParts.queryItems == [URLQueryItem(name: "scheme", value: scheme)])
+        }
         defaults.set(false, forKey: VPNAppPreferences.autoOpenKey)
         precondition(!VPNAppPreferences.automaticallyOpens())
         defaults.removeObject(forKey: VPNAppPreferences.autoOpenKey)
@@ -238,6 +252,8 @@ final class PipelineRunner {
         }
         precondition(UIApplication.shared.opens.count == 1)
         precondition(UIApplication.shared.opens[0].scheme == "localdevvpn")
+        let localItems = URLComponents(url: UIApplication.shared.opens[0], resolvingAgainstBaseURL: false)!.queryItems!
+        precondition(localItems.first(where: { $0.name == "scheme" })?.value == CellularRefreshManager.callbackScheme)
         // Return without enabling the VPN and immediately click again. A new
         // manual request must open the app without waiting for a wall-clock gate.
         UIApplication.shared.applicationState = .background
@@ -316,7 +332,10 @@ final class PipelineRunner {
             try await VPNOperationContext.withOperation(isInteractive: true) { try await expectMissingVPN() }
         }
         _ = await started.next()
-        try await VPNOperationContext.withOperation(isInteractive: true) { try await expectMissingVPN() }
+        let second = Task {
+            try await VPNOperationContext.withOperation(isInteractive: true) { try await expectMissingVPN() }
+        }
+        try await Task.sleep(nanoseconds: 30_000_000)
         precondition(app.opens.count == opens + 1, "In-flight launches must remain serialized")
         app.pendingOpen?.resume(returning: true)
         app.pendingOpen = nil
@@ -324,8 +343,139 @@ final class PipelineRunner {
         app.onOpen = nil
         signal.finish()
         try await first.value
+        try await second.value
         try await VPNOperationContext.withOperation(isInteractive: true) { try await expectMissingVPN() }
         precondition(app.opens.count == opens + 2, "Completing a launch must immediately allow a new request")
+    }
+
+    @MainActor static func connected(_ value: Bool) {
+        minimuxer.network.activeInterfaces = value ? [.init(name: "utun6", ip: "10.7.0.2")] : []
+    }
+
+    @MainActor static func waitUntil(_ predicate: () -> Bool) async throws {
+        for _ in 0..<200 {
+            if predicate() { return }
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        preconditionFailure("Expected asynchronous state did not arrive")
+    }
+
+    @MainActor static func returnsAndResumes() async throws {
+        let app = UIApplication.shared
+        app.applicationState = .active
+        connected(false)
+        let opens = app.opens.count
+        let group = RefreshGroup()
+        let handler = AppManager().makePipelineHandler(presentingViewController: UIViewController())
+        app.onOpen = { app.applicationState = .background }
+        let operation = Task { try await PipelineRunner().perform([], handler: handler, group: group) }
+        try await waitUntil { app.opens.count == opens + 1 }
+        app.onOpen = nil
+        app.applicationState = .active
+        try await Task.sleep(nanoseconds: 40_000_000)
+        precondition(!group.completed, "Returning without VPN must not resume transport")
+        app.applicationState = .background
+        connected(true)
+        let secondGroup = RefreshGroup()
+        let second = Task { try await PipelineRunner().perform([], handler: handler, group: secondGroup) }
+        try await Task.sleep(nanoseconds: 40_000_000)
+        precondition(!group.completed && !secondGroup.completed,
+                     "Existing and new callers must wait for the manual handoff to return")
+        app.applicationState = .active
+        _ = try await operation.value
+        _ = try await second.value
+        precondition(group.completionCount == 1 && secondGroup.completionCount == 1 && app.opens.count == opens + 1,
+                     "Original pipelines must resume exactly once")
+        connected(false)
+    }
+
+    @MainActor static func returnWithoutVPN() async throws {
+        let app = UIApplication.shared
+        let group = RefreshGroup()
+        let handler = AppManager().makePipelineHandler(presentingViewController: UIViewController())
+        let opens = app.opens.count
+        app.onOpen = { app.applicationState = .background }
+        let operation = Task { try await PipelineRunner().perform([], handler: handler, group: group) }
+        try await waitUntil { app.opens.count == opens + 1 }
+        app.onOpen = nil
+        app.applicationState = .active
+        let returned = Date()
+        do { _ = try await operation.value; preconditionFailure("Returning without VPN must time out") }
+        catch OperationError.noVPN { }
+        let elapsed = Date().timeIntervalSince(returned)
+        precondition(elapsed >= 0.25 && elapsed < 3, "Returning must allow a bounded connection grace period")
+        precondition(!group.completed && app.opens.count == opens + 1, "Missing VPN must not begin transport")
+    }
+
+    @MainActor static func waiterCancellation() async throws {
+        let app = UIApplication.shared
+        app.applicationState = .active
+        connected(false)
+        let opens = app.opens.count
+        var firstFinished = false
+        var secondFinished = false
+        let first = Task {
+            defer { firstFinished = true }
+            try await VPNOperationContext.withOperation(isInteractive: true) { try await VPNAppManager.requireVPN() }
+        }
+        try await waitUntil { app.opens.count == opens + 1 }
+        let second = Task {
+            defer { secondFinished = true }
+            try await VPNOperationContext.withOperation(isInteractive: true) { try await VPNAppManager.requireVPN() }
+        }
+        try await Task.sleep(nanoseconds: 30_000_000)
+        first.cancel()
+        do { try await first.value; preconditionFailure("Cancelled waiter must throw") }
+        catch is CancellationError { }
+        precondition(firstFinished && !secondFinished && app.opens.count == opens + 1,
+                     "One cancelled waiter must not cancel the shared handoff")
+        connected(true)
+        try await second.value
+        precondition(secondFinished && app.opens.count == opens + 1)
+        connected(false)
+        let last = Task {
+            try await VPNOperationContext.withOperation(isInteractive: true) { try await VPNAppManager.requireVPN() }
+        }
+        try await waitUntil { app.opens.count == opens + 2 }
+        last.cancel()
+        do { try await last.value; preconditionFailure("Last waiter must cancel") }
+        catch is CancellationError { }
+        try await Task.sleep(nanoseconds: 30_000_000)
+        app.onOpen = { connected(true) }
+        try await VPNOperationContext.withOperation(isInteractive: true) { try await VPNAppManager.requireVPN() }
+        app.onOpen = nil
+        precondition(app.opens.count == opens + 3, "Last cancellation must release handoff for a new operation")
+        connected(false)
+    }
+
+    @MainActor static func totalTimeout() async throws {
+        let app = UIApplication.shared
+        app.applicationState = .active
+        connected(false)
+        let opens = app.opens.count
+        app.onOpen = { app.applicationState = .background }
+        let started = Date()
+        try await VPNOperationContext.withOperation(isInteractive: true) { try await expectMissingVPN() }
+        app.onOpen = nil
+        app.applicationState = .active
+        let elapsed = Date().timeIntervalSince(started)
+        precondition(elapsed >= 1 && elapsed < 3, "Background wait must use the overall deadline")
+        precondition(app.opens.count == opens + 1)
+    }
+
+    @MainActor static func manualDestinations() async throws {
+        let defaults = UserDefaults.standard
+        let app = UIApplication.shared
+        let opens = app.opens.count
+        defaults.set("VPN Test", forKey: VPNAppPreferences.shortcutNameKey)
+        defaults.set("other-vpn://open", forKey: VPNAppPreferences.customURLKey)
+        for destination in [VPNAppDestination.shortcut, .customURL] {
+            connected(false)
+            defaults.set(destination.rawValue, forKey: VPNAppPreferences.destinationKey)
+            try await VPNOperationContext.withOperation(isInteractive: true) { try await expectMissingVPN() }
+        }
+        precondition(app.opens.count == opens + 2, "Other destinations remain manual launch then retry")
+        defaults.removeObject(forKey: VPNAppPreferences.destinationKey)
     }
 
     @MainActor static func transportFailures() async throws {
@@ -385,8 +535,19 @@ def production_source():
     handler = (ROOT / "SideStore/Handlers/PipelineHandler.swift").read_text(encoding="utf-8")
     harness = harness.replace("// PRODUCTION_HANDLER_INIT", declaration(handler, "init("))
     harness = harness.replace("// PRODUCTION_HANDLER_FACTORY", declaration(factory, "private func makePipelineHandler(").replace("private func", "func"))
+    manager = (device / "VPNAppManager.swift").read_text(encoding="utf-8").replace("import UIKit", "")
+    # Keep the production state machine and shorten only its clock constants.
+    timings = {
+        "connectionPollNanoseconds: UInt64 = 250_000_000": "connectionPollNanoseconds: UInt64 = 10_000_000",
+        "foregroundConnectionTimeout: TimeInterval = 15": "foregroundConnectionTimeout: TimeInterval = 0.35",
+        "totalConnectionTimeout: TimeInterval = 300": "totalConnectionTimeout: TimeInterval = 1.2",
+    }
+    for original, replacement in timings.items():
+        if manager.count(original) != 1:
+            raise AssertionError(f"Expected one production timing constant: {original}")
+        manager = manager.replace(original, replacement)
     pieces = [harness, (device / "VPNAppPreferences.swift").read_text(encoding="utf-8"),
-              (device / "VPNAppManager.swift").read_text(encoding="utf-8").replace("import UIKit", ""),
+              manager,
               (ROOT / "SideStore/Core/Operations/Errors/OperationError.swift").read_text(encoding="utf-8")]
     for signature in ("public func isMinimuxerReady()", "public func ensureMinimuxerReady()", "private func withDeviceConnection<T>"):
         pieces.append(declaration(wrapper, signature).replace("public func", "func"))

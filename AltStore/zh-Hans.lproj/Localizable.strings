@@ -1925,7 +1925,7 @@
 /* VPN handoff and clear device connection errors. */
 "VPN Auto-Open" = "VPN 自动跳转";
 "Automatically Open VPN App" = "未连接时自动打开 VPN App";
-"When a foreground operation needs the local VPN and it is not connected, open the selected app. Connect the VPN, return here, and retry. Background refresh will not open another app." = "在应用前台手动执行需要本地 VPN 的操作时，若未连接 VPN，将打开所选应用。请连接 VPN 后返回重试。快捷指令和后台刷新不会自动跳转。";
+"With this option on and LocalDevVPN selected, foreground operations start the VPN when needed and return here automatically. SideStore checks the connection before continuing. Background refresh and operations started by Shortcuts will not open another app." = "开启此选项并选择默认的 LocalDevVPN 后，前台手动操作会在需要时自动开启 VPN 并返回，SideStore 检查连接后继续操作。后台刷新和通过快捷指令发起的操作不会打开其他应用。";
 "VPN App" = "VPN 应用";
 "Not Installed" = "未安装";
 "Other VPN App via Shortcuts" = "通过快捷指令选择其他 VPN";
@@ -1941,7 +1941,7 @@
 "App Launch URL" = "应用启动链接";
 "Enter the VPN app's documented URL, for example localdevvpn://. Web links are not supported. Use the button below to test the URL." = "填写 VPN 应用说明中提供的启动链接，例如 localdevvpn://。不支持网页链接，可点击下方按钮测试是否能打开。";
 "Open Selected VPN App" = "打开所选 VPN 应用";
-"Opening an app does not confirm that its VPN is connected. Enable the VPN in that app before retrying your operation." = "打开应用不代表 VPN 已连接。请在该应用中开启 VPN，再返回重试。";
+"This button tests opening the selected app. Returning does not confirm that the VPN is connected. For a shortcut or custom URL, you may need to connect the VPN, return here, and retry your operation." = "此按钮用于测试能否打开所选应用。自动返回不代表 VPN 已连接。使用快捷指令或自定义链接时，可能仍需手动连接 VPN、返回此处并重试操作。";
 "Could Not Open VPN App" = "无法打开 VPN 应用";
 "Check that the selected app is installed and its launch URL or shortcut name is correct. You can also open the VPN app manually." = "请确认已安装所选应用，且启动链接或快捷指令名称正确。也可以手动打开 VPN 应用。";
 "VPN is not connected. Open your local VPN app and connect it, then return and retry. You can choose the app in Settings > VPN Auto-Open." = "尚未开启 VPN。请打开本地 VPN 应用并连接，然后返回重试。可在“设置 → VPN 自动跳转”中选择要打开的应用。";

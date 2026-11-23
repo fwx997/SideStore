@@ -16,17 +16,22 @@ on:
         required: true
         type: string
       reuse_build_run:
-        description: Reuse verified SideStore and SideInstaller artifacts from this run (leave empty to compile them)
+        description: Reuse verified application artifacts from this run (leave empty to compile all)
         required: false
         default: ''
         type: string
+      rebuild_sidestore:
+        description: Reuse only SideInstaller and siboot, and test/build SideStore from this commit
+        required: false
+        default: false
+        type: boolean
       package_only:
         description: Compile and package only; device testing is performed separately
         required: false
         default: false
         type: boolean
       runner:
-        description: Xcode 27 for full builds; Intel is supported only when reusing prebuilt applications
+        description: Xcode 27 for application builds; Intel is supported only when reusing both prebuilt applications
         required: true
         default: xcode-27
         type: choice
@@ -40,7 +45,7 @@ permissions:
 
 jobs:
   regressions:
-    if: ${{ !inputs.package_only && inputs.reuse_build_run == '' }}
+    if: ${{ !inputs.package_only && (inputs.reuse_build_run == '' || inputs.rebuild_sidestore) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -77,9 +82,15 @@ jobs:
         env:
           SELECTED_RUNNER: ${{ inputs.runner }}
           REUSED_BUILD: ${{ inputs.reuse_build_run }}
+          REBUILD_SIDESTORE: ${{ inputs.rebuild_sidestore }}
+          PACKAGE_ONLY: ${{ inputs.package_only }}
         run: |
-          if [ "$SELECTED_RUNNER" = "macos-26-intel" ] && [ -z "$REUSED_BUILD" ]; then
-            echo 'A full SideInstaller build requires Xcode 27; Intel is for host-only repackaging.' >&2
+          if [ "$REBUILD_SIDESTORE" = "true" ] && { [ -z "$REUSED_BUILD" ] || [ "$PACKAGE_ONLY" = "true" ]; }; then
+            echo 'Rebuilding SideStore requires a verified reuse run and its full regression tests.' >&2
+            exit 1
+          fi
+          if [ "$SELECTED_RUNNER" = "macos-26-intel" ] && { [ -z "$REUSED_BUILD" ] || [ "$REBUILD_SIDESTORE" = "true" ]; }; then
+            echo 'SideStore and SideInstaller builds use Xcode 27; Intel is for host-only repackaging.' >&2
             exit 1
           fi
       - name: Install build tools
@@ -105,8 +116,16 @@ jobs:
         run: |
           python3 .github/tests/test_background_refresh.py --require-swift -v
           python3 -m unittest discover -s .github/tests -p test_companion_switch.py -v
+      - name: Reuse exact verified application artifacts
+        if: ${{ inputs.reuse_build_run != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REUSE_BUILD_RUN: ${{ inputs.reuse_build_run }}
+          EXPECTED_SIDEINSTALLER: ${{ inputs.sideinstaller_ref }}
+          REBUILD_SIDESTORE: ${{ inputs.rebuild_sidestore }}
+        run: python3 scripts/reuse_combined_artifacts.py
       - name: Test SideStore signing, recovery, and background refresh
-        if: ${{ !inputs.package_only && inputs.reuse_build_run == '' }}
+        if: ${{ !inputs.package_only && (inputs.reuse_build_run == '' || inputs.rebuild_sidestore) }}
         run: |
           swiftc --version
           python3 -m unittest discover -s scripts/tests -v
@@ -130,7 +149,7 @@ jobs:
           path: SideInstaller-build/build/SideInstaller.ipa
           if-no-files-found: error
       - name: Set SideStore version
-        if: ${{ inputs.reuse_build_run == '' }}
+        if: ${{ inputs.reuse_build_run == '' || inputs.rebuild_sidestore }}
         run: |
           VERSION=$(python3 scripts/ci/workflow.py get-marketing-version)
           COMMIT=$(python3 scripts/ci/workflow.py commit-id)
@@ -138,21 +157,14 @@ jobs:
           python3 scripts/ci/workflow.py set-marketing-version "$NORMALIZED"
           echo "SIDESTORE_VERSION=$NORMALIZED" >> "$GITHUB_ENV"
       - name: Build SideStore
-        if: ${{ inputs.reuse_build_run == '' }}
+        if: ${{ inputs.reuse_build_run == '' || inputs.rebuild_sidestore }}
         run: python3 scripts/ci/workflow.py build
       - uses: actions/upload-artifact@v4
-        if: ${{ inputs.reuse_build_run == '' }}
+        if: ${{ inputs.reuse_build_run == '' || inputs.rebuild_sidestore }}
         with:
           name: SideStore-${{ env.SIDESTORE_VERSION }}.ipa
           path: SideStore.ipa
           if-no-files-found: error
-      - name: Reuse exact verified application artifacts
-        if: ${{ inputs.reuse_build_run != '' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REUSE_BUILD_RUN: ${{ inputs.reuse_build_run }}
-          EXPECTED_SIDEINSTALLER: ${{ inputs.sideinstaller_ref }}
-        run: python3 scripts/reuse_combined_artifacts.py
       - uses: actions/upload-artifact@v4
         if: ${{ inputs.reuse_build_run != '' }}
         with:
@@ -160,7 +172,7 @@ jobs:
           path: SideInstaller-build/build/SideInstaller.ipa
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
-        if: ${{ inputs.reuse_build_run != '' }}
+        if: ${{ inputs.reuse_build_run != '' && !inputs.rebuild_sidestore }}
         with:
           name: SideStore-${{ env.SIDESTORE_VERSION }}.ipa
           path: SideStore.ipa

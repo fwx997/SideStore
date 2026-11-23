@@ -51,10 +51,14 @@ enum VPNAppPreferences {
         VPNAppDestination(rawValue: defaults.string(forKey: destinationKey) ?? "") ?? .localDevVPN
     }
 
-    static func launchURL(in defaults: UserDefaults = .standard) -> URL? {
+    static func launchURL(in defaults: UserDefaults = .standard, callbackScheme: String = "sidestore") -> URL? {
         switch destination(in: defaults) {
         case .localDevVPN:
-            return localDevVPNURL
+            var components = URLComponents()
+            components.scheme = "localdevvpn"
+            components.host = "enable"
+            components.queryItems = [URLQueryItem(name: "scheme", value: callbackScheme)]
+            return components.url
         case .shortcut:
             let name = (defaults.string(forKey: shortcutNameKey) ?? defaultShortcutName)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
