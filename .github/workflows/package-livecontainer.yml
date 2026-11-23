@@ -26,12 +26,13 @@ on:
         default: false
         type: boolean
       runner:
-        description: SideInstaller requires the iOS 27 SDK
+        description: Xcode 27 for full builds; Intel is supported only when reusing prebuilt applications
         required: true
         default: xcode-27
         type: choice
         options:
           - xcode-27
+          - macos-26-intel
 
 permissions:
   contents: read
@@ -71,7 +72,16 @@ jobs:
           path: SideInstaller-build
       - uses: maxim-lobanov/setup-xcode@v1.6.0
         with:
-          xcode-version: '27.2'
+          xcode-version: ${{ inputs.runner == 'macos-26-intel' && '26.6' || '27.2' }}
+      - name: Validate the selected build environment
+        env:
+          SELECTED_RUNNER: ${{ inputs.runner }}
+          REUSED_BUILD: ${{ inputs.reuse_build_run }}
+        run: |
+          if [ "$SELECTED_RUNNER" = "macos-26-intel" ] && [ -z "$REUSED_BUILD" ]; then
+            echo 'A full SideInstaller build requires Xcode 27; Intel is for host-only repackaging.' >&2
+            exit 1
+          fi
       - name: Install build tools
         run: brew install ldid xcbeautify xcodegen
       - uses: dtolnay/rust-toolchain@stable
