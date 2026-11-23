@@ -28,12 +28,14 @@ def production_source():
     model = (ROOT / "AltStore/Core/Model/InstalledApp.swift").read_text(encoding="utf-8")
     contexts = (OPERATIONS / "OperationContexts.swift").read_text(encoding="utf-8")
     runner = (OPERATIONS / "PipelineRunner.swift").read_text(encoding="utf-8")
+    entitlements = (OPERATIONS / "OperationEntitlements.swift").read_text(encoding="utf-8")
     replacements = {
         "// MODEL_METHODS": "\n".join(member(model, signature) for signature in (
             "func update(provisioningProfile: ALTProvisioningProfile)",
             "func update(provisioningProfiles: [String: ALTProvisioningProfile])",
         )),
         "// BATCH_TYPE": member(contexts, "struct PendingProfileBatch"),
+        "// MEMORY_VALIDATION": member(entitlements, "static func validateRefreshMemoryGrant("),
         "// RUNNER_METHODS": "\n".join(member(runner, signature) for signature in (
             "func performOperation(for operation: AppOperation",
             "private func completeOperation(_ operation: AppOperation",
@@ -59,6 +61,14 @@ enum Failure: Error { case install, save, missing }
 enum ALTError: Error { case invalidApp(reason: String) }
 enum OperationError: Error {
     case invalidParameters(String), cancelled
+    case invalidApp(reason: String)
+}
+struct ALTEntitlement {
+    let rawValue: String
+    static let increasedMemoryLimit = ALTEntitlement(rawValue: "com.apple.developer.kernel.increased-memory-limit")
+}
+enum OperationEntitlements {
+    // MEMORY_VALIDATION
 }
 enum CertificateStatus { case valid }
 enum LoggedError { enum Operation { case refresh } }
@@ -98,15 +108,20 @@ struct ALTProvisioningProfile {
     let creationDate: Date
     let expirationDate: Date
     let data: Data
-    init(_ number: Int) {
+    let bundleIdentifier: String
+    var entitlements: [String: any Sendable] = [:]
+    init(_ number: Int, bundleIdentifier: String = "example.app") {
         creationDate = Date(timeIntervalSince1970: Double(number))
         expirationDate = creationDate.addingTimeInterval(604800)
         data = Data(String(number).utf8)
+        self.bundleIdentifier = bundleIdentifier
     }
 }
 final class InstalledExtension {
     let bundleIdentifier: String
     var customBundleIdentifier: String?
+    var resignedBundleIdentifier: String { customBundleIdentifier ?? bundleIdentifier }
+    var customEntitlements: [String: any Sendable]?
     var refreshedDate = Date.distantPast
     var expirationDate = Date.distantPast
     init(_ id: String, custom: String? = nil) {
@@ -120,6 +135,8 @@ final class InstalledExtension {
 final class InstalledApp: @unchecked Sendable {
     let bundleIdentifier: String
     var customBundleIdentifier: String?
+    var resignedBundleIdentifier: String { customBundleIdentifier ?? bundleIdentifier }
+    var customEntitlements: [String: any Sendable]?
     let objectID: Int
     var useMainProfile = false
     var certificateStatus: CertificateStatus?
@@ -151,7 +168,12 @@ final class NSManagedObjectContext: @unchecked Sendable {
     }
     func processPendingChanges() {}
 }
-struct ALTApplication { let name = "Example" }
+struct ALTApplication {
+    let name = "Example"
+    var bundleIdentifier = "example.app"
+    var entitlements: [String: any Sendable] = [:]
+    var appExtensions: [ALTApplication] = []
+}
 class StandaloneOperationContext {
     let dbBackgroundContext: NSManagedObjectContext
     init(steps: [Int] = [], dbBackgroundContext: NSManagedObjectContext) {
@@ -176,6 +198,8 @@ final class InstallAppOperationContext: StandaloneOperationContext {
     var installedApp: InstalledApp?
     var targetCertStatus: CertificateStatus? = .valid
     var bundleIdentifier: String { installedApp!.bundleIdentifier }
+    var targetBundleIdentifier: String { installedApp!.customBundleIdentifier ?? bundleIdentifier }
+    var useMainProfile: Bool { installedApp?.useMainProfile ?? false }
 }
 class BaseStandaloneOperation<Context, Output> {
     let context: Context
@@ -264,6 +288,7 @@ final class PipelineRunner {
         try await saveFailure()
         try await cancellation()
         try await singleRefresh()
+        try await missingMemoryGrant()
         print("Batch refresh date persistence and completion regressions passed")
     }
     static func fixture(custom: Bool = false) -> InstallAppOperationContext {
@@ -276,8 +301,8 @@ final class PipelineRunner {
         db.records[app.objectID] = app
         context.installedApp = app
         let id = app.customBundleIdentifier ?? app.bundleIdentifier
-        context.provisioningProfiles = [id: ALTProvisioningProfile(100),
-                                        id + ".widget": ALTProvisioningProfile(200)]
+        context.provisioningProfiles = [id: ALTProvisioningProfile(100, bundleIdentifier: id),
+                                        id + ".widget": ALTProvisioningProfile(200, bundleIdentifier: id + ".widget")]
         return context
     }
     static func matchingProfiles() async throws {
@@ -351,7 +376,7 @@ final class PipelineRunner {
         let second = InstalledApp("another.app", objectID: 2)
         context.dbBackgroundContext.records[second.objectID] = second
         context.installedApp = second
-        context.provisioningProfiles = [second.bundleIdentifier: ALTProvisioningProfile(500)]
+        context.provisioningProfiles = [second.bundleIdentifier: ALTProvisioningProfile(500, bundleIdentifier: second.bundleIdentifier)]
         try await runner.performOperation(for: AppOperation(app: second),
                                           handler: PipelineExecutionHandler(), group: group, operationsCount: 2)
         precondition(group.results.isEmpty && context.sharedContext.pendingProfiles.count == 2)
@@ -390,6 +415,19 @@ final class PipelineRunner {
         precondition(result.expirationDate == ALTProvisioningProfile(100).expirationDate)
         precondition(result.appExtensions[0].expirationDate == ALTProvisioningProfile(200).expirationDate)
         precondition(Probe.shared.installed.count == 2 && context.sharedContext.pendingProfiles.isEmpty)
+    }
+    static func missingMemoryGrant() async throws {
+        for batched in [false, true] {
+            let context = fixture(custom: true)
+            context.isCellularRefreshGroup = batched
+            context.installedApp!.customEntitlements = [ALTEntitlement.increasedMemoryLimit.rawValue: true]
+            do {
+                _ = try await RefreshAppOperation(context: context).execute(parentProgress: nil)
+                preconditionFailure("A replacement profile must preserve the installed memory grant")
+            } catch OperationError.invalidApp { }
+            precondition(Probe.shared.installed.isEmpty && context.sharedContext.pendingProfiles.isEmpty)
+            precondition(context.installedApp!.expirationDate == .distantPast && context.dbBackgroundContext.saves == 0)
+        }
     }
 }
 '''

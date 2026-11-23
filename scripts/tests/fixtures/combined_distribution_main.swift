@@ -124,7 +124,8 @@ struct CertificateHarness {
 
     static func package(_ host: URL) throws {
         try CombinedAppDistribution.validatePackage(at: host)
-        expect(CombinedAppDistribution.hostURL(for: host.appendingPathComponent("Frameworks/SideStoreApp.framework")) == host, "framework resolves outer host")
+        let resolved = CombinedAppDistribution.hostURL(for: host.appendingPathComponent("Frameworks/SideStoreApp.framework"))
+        expect(resolved.standardizedFileURL.path == host.standardizedFileURL.path, "framework resolves outer host")
         let executable = host.appendingPathComponent("Frameworks/SideInstallerApp.framework/Executable")
         try Data().write(to: executable)
         rejects { try CombinedAppDistribution.validatePackage(at: host) }

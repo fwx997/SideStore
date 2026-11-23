@@ -21,7 +21,15 @@ diff --git a/Sources/Models/Feature.swift b/Sources/Models/Feature.swift
 diff --git a/Sources/DeveloperPortal/AppIDs.swift b/Sources/DeveloperPortal/AppIDs.swift
 --- a/Sources/DeveloperPortal/AppIDs.swift
 +++ b/Sources/DeveloperPortal/AppIDs.swift
-@@ -73,8 +73,13 @@
+@@ -66,6 +66,7 @@
+     }
+ 
+     func updateAppID(_ appID: AppID, team: Team, session: Session) async throws -> AppID {
++        try Task.checkCancellation()
+         debugLog("[SideSign] updateAppID starting...")
+         verboseLog("[SideSign] AppID: \(appID.bundleIdentifier), Team: \(team.name)")
+ 
+@@ -73,8 +74,13 @@
              "appIdId": appID.identifier
          ]
  
@@ -35,7 +43,15 @@ diff --git a/Sources/DeveloperPortal/AppIDs.swift b/Sources/DeveloperPortal/AppI
              if trimmed.lowercased() == "true" {
                  parameters[feature.rawValue] = true
              } else if trimmed.lowercased() == "false" {
-@@ -93,6 +98,18 @@
+@@ -85,6 +91,7 @@
+         }
+ 
+         let response: AppIDResponse = try await sendRequest(url: Constants.URLs.updateAppID, additionalParameters: parameters, session: session, team: team)
++        try Task.checkCancellation()
+ 
+         guard let updatedAppID = response.appId else {
+             debugLog("[SideSign] updateAppID error: Missing appId in response")
+@@ -93,6 +100,19 @@
  
          debugLog("[SideSign] updateAppID succeeded")
          verboseLog("[SideSign] Updated: \(updatedAppID.name) (\(updatedAppID.bundleIdentifier))")
@@ -51,6 +67,7 @@ diff --git a/Sources/DeveloperPortal/AppIDs.swift b/Sources/DeveloperPortal/AppI
 +                debugLog("[SideSign] Capability request failed for \(updatedAppID.bundleIdentifier): \(error.localizedDescription)")
 +            }
 +        }
++        try Task.checkCancellation()
          return updatedAppID
      }
  
@@ -58,7 +75,7 @@ diff --git a/Sources/DeveloperPortal/Capabilities.swift b/Sources/DeveloperPorta
 new file mode 100644
 --- /dev/null
 +++ b/Sources/DeveloperPortal/Capabilities.swift
-@@ -0,0 +1,111 @@
+@@ -0,0 +1,117 @@
 +import Foundation
 +#if canImport(FoundationNetworking)
 +import FoundationNetworking
@@ -74,6 +91,7 @@ new file mode 100644
 +        team: Team,
 +        session apiSession: Session
 +    ) async throws {
++        try Task.checkCancellation()
 +        let identifiers = Array(Set(capabilityIDs)).sorted()
 +        guard !identifiers.isEmpty else { return }
 +        let relationships = identifiers.map { identifier -> [String: Any] in
@@ -104,7 +122,12 @@ new file mode 100644
 +        request.httpBody = try JSONSerialization.data(withJSONObject: ["data": resource], options: .sortedKeys)
 +        capabilityHeaders(for: apiSession).forEach { request.setValue($1, forHTTPHeaderField: $0) }
 +
-+        let (data, response) = try await session.data(for: request, delegate: CapabilityRedirectPolicy())
++        // A session delegate also enforces the redirect rule on FoundationNetworking,
++        // whose async data(for:delegate:) task delegate is not consistently consulted.
++        let capabilitySession = URLSession(configuration: session.configuration, delegate: CapabilityRedirectPolicy(), delegateQueue: nil)
++        defer { capabilitySession.invalidateAndCancel() }
++        let (data, response) = try await capabilitySession.data(for: request)
++        try Task.checkCancellation()
 +        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
 +        try validateCapabilityResponse(data, status: status, appID: appID.identifier)
 +        debugLog("[SideSign] Apple accepted capabilities \(identifiers) for \(appID.bundleIdentifier)")

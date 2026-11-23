@@ -117,7 +117,7 @@ class MemorySigningTests(unittest.TestCase):
         cache = (operations / "CacheResignedMetadataOperation.swift").read_text(encoding="utf-8")
         profiles = (operations / "FetchProvisioningProfilesOperation.swift").read_text(encoding="utf-8")
         refresh = (operations / "RefreshAppOperation.swift").read_text(encoding="utf-8")
-        extracted = "import Foundation\nfinal class RoutingOperation {\nlet context = TestContext()\n"
+        extracted = "import Foundation\nimport CoreFoundation\nfinal class RoutingOperation {\nlet context = TestContext()\n"
         extracted += method(routing, "private func requestedEntitlements(") + "\n}\n"
         extracted += "final class MetadataOperation {\n"
         extracted += method(cache, "private func cacheEntitlements(") + "\n"
