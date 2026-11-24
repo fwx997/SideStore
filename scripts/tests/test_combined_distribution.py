@@ -55,6 +55,7 @@ class CombinedDistributionTests(unittest.TestCase):
     def test_complete_host_and_companion_executables_are_required(self): self.scenario("package")
     def test_two_app_update_cannot_remove_sideinstaller(self): self.scenario("missing-sideinstaller")
     def test_lost_extensions_or_mismatched_versions_are_rejected(self): self.scenario("extensions")
+    def test_shortcut_builds_require_the_native_extension_and_its_metadata(self): self.scenario("native-shortcuts")
     def test_only_https_distribution_url_is_accepted(self): self.scenario("url")
     def test_catalog_version_and_build_must_match_download(self): self.scenario("version")
     def test_numeric_build_updates_reject_equal_older_and_malformed_builds(self): self.scenario("build-update")

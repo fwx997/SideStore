@@ -87,6 +87,16 @@ enum CombinedAppDistribution {
         try validateFramework("SideInstaller", identifiers: ["com.frizzlem.sideinstaller", "com.frizzle.sideinstaller"], in: bundleURL)
         try validateExtension("LiveProcess", in: bundleURL, host: host)
         try validateExtension("SideInstallerLiveActivity", in: bundleURL, host: host)
+        if host["LCSideInstallerShortcutsVersion"] as? Int == 1 {
+            try validateExtension("LaunchAppExtension", in: bundleURL, host: host)
+            let extensionURL = bundleURL.appendingPathComponent("PlugIns/LaunchAppExtension.appex")
+            let native = try info(at: extensionURL)
+            let attributes = native["EXAppExtensionAttributes"] as? [String: Any]
+            let metadata = extensionURL.appendingPathComponent("Metadata.appintents/extract.actionsdata")
+            guard attributes?["EXExtensionPointIdentifier"] as? String == "com.apple.appintents-extension",
+                  let size = try FileManager.default.attributesOfItem(atPath: metadata.path)[.size] as? NSNumber,
+                  size.intValue > 0 else { throw Failure.invalidPackage }
+        }
     }
 
     private static func validateExtension(_ name: String, in hostURL: URL, host: [String: Any]) throws {

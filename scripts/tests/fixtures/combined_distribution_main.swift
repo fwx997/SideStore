@@ -97,6 +97,7 @@ struct CertificateHarness {
             try FileManager.default.removeItem(at: host.appendingPathComponent("Frameworks/SideInstallerApp.framework"))
             rejects { try CombinedAppDistribution.validatePackage(at: host) }
         case "extensions": try extensions(host)
+        case "native-shortcuts": try nativeShortcuts(host)
         case "url": url()
         case "version": version()
         case "build-update": buildUpdate()
@@ -141,6 +142,32 @@ struct CertificateHarness {
         values["CFBundleVersion"] = "42"
         values["CFBundleIdentifier"] = "com.frizzlem.sideinstaller.LiveActivity"
         try plist(values, at: target)
+        rejects { try CombinedAppDistribution.validatePackage(at: host) }
+    }
+
+    static func nativeShortcuts(_ host: URL) throws {
+        var hostInfo = try CombinedAppDistribution.info(at: host)
+        hostInfo["LCSideInstallerShortcutsVersion"] = 1
+        try plist(hostInfo, at: host.appendingPathComponent("Info.plist"))
+        rejects { try CombinedAppDistribution.validatePackage(at: host) }
+
+        let native = try bundle("LaunchAppExtension.appex",
+                                id: "com.kdt.livecontainer.TEAM123456.LaunchAppExtension",
+                                in: host.appendingPathComponent("PlugIns"))
+        var values = try CombinedAppDistribution.info(at: native)
+        values["EXAppExtensionAttributes"] = ["EXExtensionPointIdentifier": "com.apple.appintents-extension"]
+        try plist(values, at: native.appendingPathComponent("Info.plist"))
+        let metadata = native.appendingPathComponent("Metadata.appintents/extract.actionsdata")
+        try FileManager.default.createDirectory(at: metadata.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(#"{"actions":{}}"#.utf8).write(to: metadata)
+        try CombinedAppDistribution.validatePackage(at: host)
+
+        values["EXAppExtensionAttributes"] = ["EXExtensionPointIdentifier": "another-extension"]
+        try plist(values, at: native.appendingPathComponent("Info.plist"))
+        rejects { try CombinedAppDistribution.validatePackage(at: host) }
+        values["EXAppExtensionAttributes"] = ["EXExtensionPointIdentifier": "com.apple.appintents-extension"]
+        try plist(values, at: native.appendingPathComponent("Info.plist"))
+        try FileManager.default.removeItem(at: metadata)
         rejects { try CombinedAppDistribution.validatePackage(at: host) }
     }
 

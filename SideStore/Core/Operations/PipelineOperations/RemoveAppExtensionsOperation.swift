@@ -70,8 +70,8 @@ final class RemoveAppExtensionsOperation: BasePipelineOperation<InstallAppOperat
 
         if context.targetsRunningStore && CombinedAppDistribution.requiresCompanions(at: targetAppBundle.fileURL) {
             try CombinedAppDistribution.validatePackage(at: targetAppBundle.fileURL)
-            // LiveProcess enables background renewal; SI's extension supplies
-            // Live Activities. Keep the complete host with one profile policy.
+            // Keep background renewal, Live Activities, and native shortcut
+            // actions together with the complete host's profile policy.
             context.useMainProfile = true
             self.setProgress(100)
             return targetAppBundle
