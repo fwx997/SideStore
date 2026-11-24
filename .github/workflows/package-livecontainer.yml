@@ -154,7 +154,7 @@ jobs:
         if: ${{ inputs.reuse_build_run == '' }}
         working-directory: SideInstaller-build
         env:
-          VERSION: 2.1.1
+          VERSION: 2.2.0
           BUILD_NUMBER: 20261124.1
         run: |
           set -o pipefail
