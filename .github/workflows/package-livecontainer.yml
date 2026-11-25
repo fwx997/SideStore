@@ -15,6 +15,11 @@ on:
         description: HTTPS download URL for future complete three-app updates
         required: true
         type: string
+      shortcut_records:
+        description: Optional public iCloud shortcut record IDs to preserve and update, separated by commas
+        required: false
+        default: ''
+        type: string
       reuse_build_run:
         description: Reuse verified application artifacts from this run (leave empty to compile all)
         required: false
@@ -195,13 +200,16 @@ jobs:
           path: SideStore.ipa
           if-no-files-found: error
       - name: Archive LiveContainer
+        id: archive_host
         working-directory: LiveContainer-build
         run: |
           set -o pipefail
           if [ -f .github/prepare_dependencies.sh ]; then
             sh .github/prepare_dependencies.sh
           fi
-          python3 .github/configure_combined_build.py --build-number "20261124.$GITHUB_RUN_NUMBER"
+          BUILD_NUMBER="$(date -u +%Y%m%d).$GITHUB_RUN_NUMBER"
+          echo "build_number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+          python3 .github/configure_combined_build.py --build-number "$BUILD_NUMBER"
           xcodebuild archive -archivePath archive -scheme LiveContainer -project LiveContainer.xcodeproj -sdk iphoneos -arch arm64 -configuration Release 2>&1 | tee build.log | xcbeautify --renderer github-actions
       - name: Package all three applications
         working-directory: LiveContainer-build
@@ -230,6 +238,29 @@ jobs:
             LiveContainer-build/build.log
             SideInstaller-build/sideinstaller-build.log
             reused-build.json
+
+      - name: Prepare device-specific refresh shortcuts
+        if: ${{ inputs.shortcut_records != '' }}
+        env:
+          SHORTCUT_RECORDS: ${{ inputs.shortcut_records }}
+          MINIMUM_BUILD: ${{ steps.archive_host.outputs.build_number }}
+        run: |
+          python3 scripts/prepare_refresh_shortcuts.py --records "$SHORTCUT_RECORDS" --minimum-build "$MINIMUM_BUILD" --output shortcuts/unsigned
+      - name: Sign with the macOS Shortcuts tool
+        if: ${{ inputs.shortcut_records != '' }}
+        timeout-minutes: 5
+        run: |
+          mkdir -p shortcuts/signed
+          for input in shortcuts/unsigned/*.shortcut; do
+            shortcuts sign --mode anyone --input "$input" --output "shortcuts/signed/$(basename "$input")"
+          done
+          cp shortcuts/unsigned/receipt.json shortcuts/signed/receipt.json
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && inputs.shortcut_records != '' }}
+        with:
+          name: personal-refresh-shortcuts
+          path: shortcuts/
+          if-no-files-found: error
 
   native_intents:
     if: ${{ inputs.checks_only }}

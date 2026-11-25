@@ -1964,3 +1964,14 @@
 "Start Signing" = "开始自签";
 "Sign in to SideStore and finish pairing before signing the combined app." = "请先登录 SideStore 并完成配对，再自签三合一。";
 "The bootstrap signing certificate is still valid, but its private key could not be imported. Import the matching P12 certificate or reinstall with siboot; no certificate was replaced." = "首装使用的签名证书仍有效，但未能导入其私钥。请导入对应的 P12，或使用 siboot 重新安装；未替换任何证书。";
+
+/* Shortcut cleanup after refresh errors */
+"Return Errors as Result" = "出错时返回结果";
+"Get Refresh Result" = "查询本次续签结果";
+"Request ID" = "续签请求 ID";
+"Checks one refresh request without starting another refresh." = "按请求 ID 查询本次续签结果，不会再次发起续签。";
+"Refresh is preparing or still running. Keep the VPN connected until its final result is available." = "续签正在准备或仍在执行。请保持 VPN 连接，等待本次续签的最终结果。";
+"This refresh result is missing, expired or unavailable. Keep the VPN connected until you verify the result in SideStore." = "本次续签结果不存在、已过期或暂时无法读取。确认 SideStore 中的结果前，请保持 VPN 连接。";
+"The refresh finished but its result could not be saved. Check SideStore before disconnecting the VPN." = "续签已结束，但结果未能保存。请先在 SideStore 中确认结果，再断开 VPN。";
+"Another refresh task is in progress." = "另一个续签任务正在进行中。请等待该任务结束。";
+"Another refresh task is in progress. This request was not started. Keep the VPN connected until that task finishes." = "另一个续签任务仍在执行，本次请求未启动。请保持 VPN 连接，等待该任务结束。";

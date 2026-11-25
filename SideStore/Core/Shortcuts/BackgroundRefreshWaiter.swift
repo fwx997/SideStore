@@ -84,6 +84,8 @@ final class BackgroundRefreshSession: @unchecked Sendable {
         self.deadline = deadline
     }
 
+    var hasDispatched: Bool { lock.withLock { dispatched } }
+
     func checkCanContinue() throws {
         try lock.withLock { try checkBeforeDispatch() }
     }

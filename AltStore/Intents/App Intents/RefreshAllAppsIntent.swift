@@ -93,9 +93,14 @@ struct RefreshAllAppsIntent: AppIntent, CustomIntentMigratedAppIntent, Predictab
     
     static var title: LocalizedStringResource = "Refresh All Apps"
     static var description = IntentDescription("Refreshes your sideloaded apps to prevent them from expiring.")
+
+    @Parameter(title: "Return Errors as Result", default: false)
+    var returnErrorsAsResult: Bool
     
     static var parameterSummary: some ParameterSummary {
-        Summary("Refresh All Apps")
+        Summary("Refresh All Apps") {
+            \.$returnErrorsAsResult
+        }
     }
     
     static var predictionConfiguration: some IntentPredictionConfiguration {
@@ -122,71 +127,45 @@ struct RefreshAllAppsIntent: AppIntent, CustomIntentMigratedAppIntent, Predictab
         self.init(presentsNotifications: false)
     }
     
-    func perform() async throws -> some IntentResult & ProvidesDialog
+    func perform() async throws -> some IntentResult & ProvidesDialog & ReturnsValue<String>
     {
-        let session = BackgroundRefreshSession(deadline: .now + .seconds(27))
-        // Do not await this worker on exit: shared database initialization may outlive
-        // cancellation. Session checks prevent that late initialization from starting work.
-        let preparation = Task {
-            do { try await self.refreshAllApps(session: session) }
-            catch { session.finish(.failure(error)) }
-        }
-        defer { preparation.cancel() }
+        let requestID = UUID().uuidString
         do
         {
-            try await session.wait()
-            
-            return .result(dialog: "All apps have been refreshed.")
+            let execution = try ShortcutRefreshExecution(requestID: requestID, progress: progress,
+                                                         presentsNotifications: presentsNotifications)
+            execution.start()
+            try await execution.wait()
+            let result = ShortcutRefreshResult.success(requestID: requestID, message: NSLocalizedString("All apps have been refreshed.", comment: ""))
+            return .result(value: result.json, dialog: "\(result.message)")
         }
         catch
         {
+            try Task.checkCancellation()
+            if error is CancellationError { throw error }
             let intentError = IntentError(error)
-            throw intentError
+            guard returnErrorsAsResult else { throw intentError }
+            let result = ShortcutRefreshResult.failure(intentError, requestID: requestID)
+            return .result(value: result.json, dialog: "\(result.message)")
         }
     }
 }
 
 @available(iOS 17.0, tvOS 17.0, *)
-private extension RefreshAllAppsIntent
-{
-    func refreshAllApps(session: BackgroundRefreshSession) async throws
-    {
-        try session.checkCanContinue()
-        try await CellularRefreshManager.shared.checkBackgroundRefreshAllowed()
-        try session.checkCanContinue()
-        try await DatabaseManager.shared.start()
-        try session.checkCanContinue()
-        
-        let context = DatabaseManager.shared.persistentContainer.newBackgroundContext()
-        let installedApps = await context.perform { InstalledApp.fetchAppsForRefreshingAll(in: context) }
-        try session.checkCanContinue()
-        guard !installedApps.isEmpty else {
-            session.finish(.success(()))
-            return
-        }
+struct GetRefreshResultIntent: AppIntent {
+    static var title: LocalizedStringResource = "Get Refresh Result"
+    static var description = IntentDescription("Checks one refresh request without starting another refresh.")
+    static var openAppWhenRun = false
 
-        try session.dispatch {
-            let operation = try AppManager.shared.backgroundRefresh(
-                installedApps, presentsNotifications: self.presentsNotifications,
-                ignoresServerNotFoundError: false
-            ) { result in
-                session.finish(Self.refreshResult(result))
-            }
-            self.progress.addChild(operation.progress, withPendingUnitCount: 1)
-        }
-    }
+    @Parameter(title: "Request ID")
+    var requestID: String
 
-    static func refreshResult(_ result: Result<[String: Result<InstalledApp, Error>], Error>) -> Result<Void, Error> {
-        do {
-            let results = try result.get()
-            for result in results.values {
-                if case .failure(let error) = result { throw error }
-            }
-            return .success(())
-        } catch OperationError.noInstalledApps {
-            return .success(())
-        } catch {
-            return .failure(error)
-        }
+    static var parameterSummary: some ParameterSummary { Summary("Get refresh result for \(\.$requestID)") }
+
+    func perform() async throws -> some IntentResult & ProvidesDialog & ReturnsValue<String> {
+        let result: ShortcutRefreshResult
+        do { result = try ShortcutRefreshEnvironment.store().query(requestID: requestID) }
+        catch { result = .unknown(requestID: requestID, message: error.localizedDescription) }
+        return .result(value: result.json, dialog: "\(result.message)")
     }
 }
