@@ -247,14 +247,20 @@ jobs:
         run: |
           python3 scripts/prepare_refresh_shortcuts.py --records "$SHORTCUT_RECORDS" --minimum-build "$MINIMUM_BUILD" --output shortcuts/unsigned
       - name: Sign with the macOS Shortcuts tool
+        id: sign_shortcuts
         if: ${{ inputs.shortcut_records != '' }}
+        continue-on-error: true
         timeout-minutes: 5
         run: |
           mkdir -p shortcuts/signed
           for input in shortcuts/unsigned/*.shortcut; do
             shortcuts sign --mode anyone --input "$input" --output "shortcuts/signed/$(basename "$input")"
           done
-          cp shortcuts/unsigned/receipt.json shortcuts/signed/receipt.json
+      - name: Record optional shortcut signing outcome
+        if: ${{ always() && inputs.shortcut_records != '' }}
+        env:
+          SIGNING_OUTCOME: ${{ steps.sign_shortcuts.outcome }}
+        run: python3 scripts/record_shortcut_signing.py shortcuts "$SIGNING_OUTCOME"
       - uses: actions/upload-artifact@v4
         if: ${{ always() && inputs.shortcut_records != '' }}
         with:
