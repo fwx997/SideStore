@@ -56,6 +56,8 @@ class MyAppsViewController: UICollectionViewController
     private var sideloadingProgress: Progress?
     private var dropDestinationIndexPath: IndexPath?
     private var isCheckingForUpdates = false
+    private var downloadStatusTimer: Timer?
+    private var pendingUpdateIdentifiers = Set<String>()
     private var didChangeActiveApps = false
     private var previousInactiveAppsCount = 0
     private var statusDotView: UIView?
@@ -191,6 +193,11 @@ class MyAppsViewController: UICollectionViewController
     override func viewDidAppear(_ animated: Bool)
     {
         super.viewDidAppear(animated)
+        downloadStatusTimer?.invalidate()
+        downloadStatusTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.updateDownloadStatusLabels() }
+        }
+        if let downloadStatusTimer { RunLoop.main.add(downloadStatusTimer, forMode: .common) }
         
         _viewDidAppear = true
 
@@ -203,6 +210,25 @@ class MyAppsViewController: UICollectionViewController
     override func viewWillDisappear(_ animated: Bool)
     {
         super.viewWillDisappear(animated)
+        downloadStatusTimer?.invalidate()
+        downloadStatusTimer = nil
+    }
+
+    private func updateDownloadStatusLabels() {
+        for visible in collectionView.visibleCells {
+            guard let cell = visible as? UpdateCollectionViewCell,
+                  let index = collectionView.indexPath(for: cell), index.section == Section.updates.rawValue else { continue }
+            let app = dataSource.item(at: index)
+            cell.bannerView.subtitleLabel.numberOfLines = 2
+            if pendingUpdateIdentifiers.contains(app.bundleIdentifier) || AppManager.shared.installationProgress(for: app) != nil {
+                cell.bannerView.subtitleLabel.text = DownloadTransferStatusStore.shared.text(for: app.bundleIdentifier)
+                    ?? NSLocalizedString("Preparing update and device connection…", comment: "")
+            } else {
+                DownloadTransferStatusStore.shared.remove(for: app.bundleIdentifier)
+                let version = app.storeApp?.latestSupportedVersion?.localizedVersion ?? app.localizedVersion
+                cell.bannerView.subtitleLabel.text = String(format: NSLocalizedString("Version %@", comment: ""), version)
+            }
+        }
     }
 
     private func updateCombinedSelfSignButton() {
@@ -454,6 +480,7 @@ private extension MyAppsViewController
 
             // If the app is SideStore itself, remove the build number to save space
             if app.bundleIdentifier == Bundle.Info.appbundleIdentifier,
+               !CombinedAppDistribution.requiresCompanions(at: CombinedAppDistribution.hostURL(for: Bundle.Info.activeBundleURL)),
                let version = SemanticVersion(latestSupportedVersion.version)
             {
                 // leave out the build so that it doesnt take up much space
@@ -461,6 +488,10 @@ private extension MyAppsViewController
             }
             
             cell.bannerView.subtitleLabel.text = String(format: NSLocalizedString("Version %@", comment: ""), versionText)
+            if app.bundleIdentifier == StoreApp.altstoreAppID {
+                cell.bannerView.titleLabel.text = installedApp.name
+                cell.bannerView.subtitleLabel.numberOfLines = 2
+            }
 
             let appName: String
             
@@ -964,9 +995,12 @@ private extension MyAppsViewController
             previousProgress?.cancel()
             return
         }
+        guard pendingUpdateIdentifiers.insert(installedApp.bundleIdentifier).inserted else { return }
         
         let progress = AppManager.shared.update(installedApp, presentingViewController: self) { (result) in
             DispatchQueue.main.async {
+                self.pendingUpdateIdentifiers.remove(installedApp.bundleIdentifier)
+                DownloadTransferStatusStore.shared.remove(for: installedApp.bundleIdentifier)
                 switch result
                 {
                 case .failure(let error) where error is CancellationError:

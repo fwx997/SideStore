@@ -189,6 +189,21 @@ public class InstalledApp: BaseEntity, InstalledAppProtocol
     public var isSideloaded: Bool {
         return self.storeApp == nil
     }
+
+    public override func willSave() {
+        super.willSave()
+        synchronizeUpdateAvailability()
+    }
+
+    func synchronizeUpdateAvailability() {
+        guard !isDeleted else { return }
+        let key = #keyPath(InstalledApp.hasUpdate)
+        let current = hasUpdate
+        guard (primitiveValue(forKey: key) as? Bool) != current else { return }
+        willChangeValue(forKey: key)
+        setPrimitiveValue(current, forKey: key)
+        didChangeValue(forKey: key)
+    }
     
     @objc public var hasUpdate: Bool {
         // Basic validation
@@ -207,12 +222,16 @@ public class InstalledApp: BaseEntity, InstalledAppProtocol
 
         // Combined releases retain LC's marketing version while their build
         // advances. Preserve legacy source semantics for every other app.
-        if self.version == latestVersion.version,
-           CombinedAppDistribution.isSelfIdentifier(
-               self.bundleIdentifier, base: StoreApp.altstoreAppID, running: Bundle.Info.activeBundleIdentifier
-           ), CombinedAppDistribution.requiresCompanions(at: Bundle.Info.activeBundleURL) {
+        let hostURL = CombinedAppDistribution.hostURL(for: Bundle.Info.activeBundleURL)
+        let host = Bundle(url: hostURL)
+        let isRunningHost = self.resignedBundleIdentifier == host?.bundleIdentifier
+        let runningVersion = isRunningHost ? host?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String : nil
+        if (runningVersion ?? self.version) == latestVersion.version,
+           (isRunningHost || self.bundleIdentifier == StoreApp.altstoreAppID),
+           CombinedAppDistribution.requiresCompanions(at: hostURL) {
+            let runningBuild = isRunningHost ? host?.object(forInfoDictionaryKey: "CFBundleVersion") as? String : nil
             return CombinedAppDistribution.isNewerBuild(
-                latestVersion.buildVersion, than: self.storeBuildVersion ?? self.buildVersion
+                latestVersion.buildVersion, than: runningBuild ?? self.storeBuildVersion ?? self.buildVersion
             )
         }
         

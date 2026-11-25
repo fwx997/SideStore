@@ -558,6 +558,7 @@ internal extension StoreApp
         self.versionDescription = latestVersion.localizedDescription
         self.downloadURL = latestVersion.downloadURL
         self._size = latestVersion.size
+        self.installedApp?.synchronizeUpdateAvailability()
     }
     
     func setPermissions(_ permissions: Set<AppPermission>)

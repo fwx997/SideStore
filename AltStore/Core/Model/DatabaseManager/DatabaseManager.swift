@@ -378,6 +378,11 @@ public class DatabaseManager: @unchecked Sendable
                         
             // Must go after comparing versions to see if we need to update our cached AltStore app bundle.
             self.reconcileSelfFromSelfBinary(installedApp: installedApp, localAppBundle: localAppBundle, serialNumber: serialNumber)
+            // SQL fetches use the stored attribute, not the Swift computed getter.
+            // Reconcile existing records left with a stale update flag after an external install.
+            for app in try context.fetch(InstalledApp.fetchRequest()) {
+                app.synchronizeUpdateAvailability()
+            }
             
             if installedApp.refreshedDate < cachedRefreshedDate
             {

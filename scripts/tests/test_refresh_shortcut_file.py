@@ -19,8 +19,7 @@ def fixture():
                "WFWorkflowActionParameters": {"AppIntentDescriptor": descriptor, "UUID": "old-refresh"}}
     return {"WFWorkflowIcon": {"WFWorkflowIconStartColor": 123}, "WFWorkflowTypes": ["WatchKit"],
             "WFWorkflowImportQuestions": [], "WFWorkflowTriggers": [],
-            "WFWorkflowActions": [builder.action("getwifi"),
-                                  builder.action("vpn.set", WFVPN=vpn, WFVPNOperation="Connect"),
+            "WFWorkflowActions": [builder.action("vpn.set", WFVPN=vpn, WFVPNOperation="Connect"),
                                   refresh, builder.action("notification", WFNotificationActionBody="Always success"),
                                   builder.action("vpn.set", WFVPN=vpn, WFVPNOperation="Disconnect")]}
 
@@ -123,10 +122,10 @@ class RefreshShortcutFileTests(unittest.TestCase):
         actions = result["WFWorkflowActions"]
         vpns = [item["WFWorkflowActionParameters"]["WFVPN"] for item in actions
                 if item["WFWorkflowActionIdentifier"] == builder.PREFIX + "vpn.set"]
-        self.assertEqual(vpns, [original["WFWorkflowActions"][1]["WFWorkflowActionParameters"]["WFVPN"]] * 2)
+        self.assertEqual(vpns, [original["WFWorkflowActions"][0]["WFWorkflowActionParameters"]["WFVPN"]] * 2)
         refresh = next(item for item in actions if item["WFWorkflowActionIdentifier"].endswith(".RefreshAllIntent"))
         self.assertEqual(refresh["WFWorkflowActionParameters"]["AppIntentDescriptor"],
-                         original["WFWorkflowActions"][2]["WFWorkflowActionParameters"]["AppIntentDescriptor"])
+                         original["WFWorkflowActions"][1]["WFWorkflowActionParameters"]["AppIntentDescriptor"])
         self.assertTrue(refresh["WFWorkflowActionParameters"]["returnErrorsAsResult"])
 
     def test_failed_refresh_disconnects_before_showing_actual_error(self):
@@ -157,6 +156,20 @@ class RefreshShortcutFileTests(unittest.TestCase):
         run = WorkflowExecution(self.prepared(), [outcome("pending"), outcome("unknown")]).run()
         self.assertNotIn("Disconnect", run.events)
         self.assertEqual(run.events[-1], ("notification", "Result unavailable; keep VPN"))
+
+    def test_existing_conditional_wifi_recovery_is_preserved(self):
+        original = fixture()
+        query = builder.action("getwifi", WFWiFiDetail="Network Name")
+        count = builder.action("count", Input=builder.output_of(query))
+        condition = builder.condition(count, number=1)
+        otherwise = deepcopy(condition)
+        otherwise["WFWorkflowActionParameters"]["WFControlFlowMode"] = 1
+        prefix = [query, count, condition, otherwise, builder.action("wifi.set", OnValue=0),
+                  builder.action("delay", WFDelayTime=3), builder.action("wifi.set", OnValue=1),
+                  builder.action("delay", WFDelayTime=5), builder.end_group(condition)]
+        original["WFWorkflowActions"] = prefix + original["WFWorkflowActions"]
+        prepared = builder.optimize(original, name="Phone", minimum_build="test")
+        self.assertEqual(prepared["WFWorkflowActions"][1:10], prefix)
 
     def test_unrecognized_actions_are_not_silently_removed(self):
         original = fixture()

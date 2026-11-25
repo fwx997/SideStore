@@ -84,6 +84,9 @@ def optimize(shortcut, *, name, minimum_build, checks=18, interval=10):
         raise ValueError("The refresh observation window must be bounded")
     result = deepcopy(shortcut)
     refresh, vpn = original_actions(shortcut)
+    first_vpn = next(index for index, item in enumerate(shortcut["WFWorkflowActions"])
+                     if item["WFWorkflowActionIdentifier"] == PREFIX + "vpn.set")
+    network_preparation = deepcopy(shortcut["WFWorkflowActions"][:first_vpn])
     refresh["WFWorkflowActionParameters"].update(returnErrorsAsResult=True, UUID=identifier(), ShowWhenRun=False)
     descriptor = deepcopy(refresh["WFWorkflowActionParameters"]["AppIntentDescriptor"])
     descriptor["AppIntentIdentifier"] = "GetRefreshResultIntent"
@@ -102,7 +105,7 @@ def optimize(shortcut, *, name, minimum_build, checks=18, interval=10):
                    "若观察时间用完、系统终止或手动停止，请按结果提示检查 VPN。")
     result["WFWorkflowName"] = name
     result["WFWorkflowActions"] = [
-        action("comment", WFCommentActionText=explanation),
+        action("comment", WFCommentActionText=explanation), *network_preparation,
         action("vpn.set", WFVPN=deepcopy(vpn), WFVPNOperation="Connect"),
         action("delay", WFDelayTime=2), refresh, *remember_result(refresh),
         repeat, status, pending, action("delay", WFDelayTime=interval), request, query,

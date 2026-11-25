@@ -134,9 +134,8 @@ final class DownloadAppOperation: BasePipelineOperation<InstallAppOperationConte
             debugLog("[DownloadAppOperation] Self signing the complete running host at \(hostURL.path)")
             return host
         }
-        if context.isStoreUpdate && isCombined {
-            self.sourceURL = try CombinedAppDistribution.updateURL(in: CombinedAppDistribution.info(at: hostURL))
-        }
+        // Store updates use the selected catalog's IPA URL. A fixed host URL
+        // would silently bypass the user's custom update address.
         return nil
     }
 
@@ -271,8 +270,10 @@ final class DownloadAppOperation: BasePipelineOperation<InstallAppOperationConte
     
     func downloadFile(from downloadURL: URL) async throws -> URL {
         debugLog("[DownloadAppOperation] download started: \(downloadURL)")
+        let transferID = DownloadTransferStatusStore.shared.begin(for: bundleIdentifier)
         let fileURL: URL = try await withCheckedThrowingContinuation { continuation in
-            let delegate = DownloadProgressDelegate(progress: self.progress) { result in
+            let delegate = DownloadProgressDelegate(progress: self.progress, appID: bundleIdentifier, transferID: transferID) { result in
+                if case .failure = result { DownloadTransferStatusStore.shared.remove(for: self.bundleIdentifier, id: transferID) }
                 continuation.resume(with: result)
             }
             let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
@@ -281,6 +282,7 @@ final class DownloadAppOperation: BasePipelineOperation<InstallAppOperationConte
             self.activeDownloadTask = task
             task.resume()
         }
+        DownloadTransferStatusStore.shared.processing(for: bundleIdentifier, id: transferID)
         self.setProgress(75)
         return fileURL
     }
@@ -374,14 +376,20 @@ private final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelega
     private var continuation: ((Result<URL, Error>) -> Void)?
     private var hasResumed = false
     private let lock = NSLock()
+    private let appID: String
+    private let transferID: UUID
     
-    init(progress: Progress, completion: @escaping (Result<URL, Error>) -> Void) {
+    init(progress: Progress, appID: String, transferID: UUID, completion: @escaping (Result<URL, Error>) -> Void) {
         self.progress = progress
+        self.appID = appID
+        self.transferID = transferID
         self.continuation = completion
         super.init()
     }
     
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
+        DownloadTransferStatusStore.shared.record(for: appID, id: transferID, received: totalBytesWritten,
+                                                 expected: totalBytesExpectedToWrite)
         if totalBytesExpectedToWrite > 0 {
             let fraction = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
             self.progress.completedUnitCount = Int64(fraction * 75.0)
@@ -417,6 +425,10 @@ private final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelega
             if resp.statusCode == 404 {
                 let error = CocoaError(.fileNoSuchFile, userInfo: [NSURLErrorKey: downloadTask.originalRequest?.url ?? location])
                 finish(with: .failure(error))
+                return
+            }
+            guard (200...299).contains(resp.statusCode) else {
+                finish(with: .failure(URLError(.badServerResponse)))
                 return
             }
         }

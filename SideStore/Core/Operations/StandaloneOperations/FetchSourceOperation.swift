@@ -83,6 +83,9 @@ final class FetchSourceOperation: BaseStandaloneOperation<StandaloneOperationCon
         
         let fetchedSource = try dbContext.performAndWait {
             if let source = Source.first(satisfying: NSPredicate(format: "%K == %@", #keyPath(Source.identifier), identifier), in: dbContext) {
+                for app in try dbContext.fetch(InstalledApp.fetchRequest()) {
+                    app.synchronizeUpdateAvailability()
+                }
                 return source
             } else {
                 throw OperationError.noSources

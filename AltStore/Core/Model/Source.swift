@@ -17,7 +17,7 @@ public extension Source
     static let altStoreGroupIdentifier = Bundle.Info.appbundleIdentifier
     
     // normalized url is the source identifier (or) p-key!
-    static let altStoreIdentifier = try! Source.sourceID(from: altStoreSourceURL)
+    static var altStoreIdentifier: String { try! Source.sourceID(from: altStoreSourceURL) }
 }
 
  public extension Source

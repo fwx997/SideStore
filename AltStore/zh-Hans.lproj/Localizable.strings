@@ -1975,3 +1975,18 @@
 "The refresh finished but its result could not be saved. Check SideStore before disconnecting the VPN." = "续签已结束，但结果未能保存。请先在 SideStore 中确认结果，再断开 VPN。";
 "Another refresh task is in progress." = "另一个续签任务正在进行中。请等待该任务结束。";
 "Another refresh task is in progress. This request was not started. Keep the VPN connected until that task finishes." = "另一个续签任务仍在执行，本次请求未启动。请保持 VPN 连接，等待该任务结束。";
+
+/* Combined update address and download status */
+"Combined App Updates" = "三合一更新";
+"Update Address" = "更新地址";
+"Use an HTTPS source.json address or its directory. This address controls checks and downloads for the combined app. Other app sources are unchanged." = "填写 HTTPS 的 source.json 地址或其所在目录。此地址用于三合一的更新检查和下载，不影响其他应用源。";
+"Save and Check for Updates" = "保存并检查更新";
+"Restore Default Address" = "恢复默认地址";
+"Update address saved and checked." = "更新地址已保存，检查完成。";
+"Enter a valid HTTPS update address." = "请输入有效的 HTTPS 更新地址。";
+"The combined update source is not ready. Reopen SideStore and try again." = "三合一更新源尚未准备好，请重新打开 SideStore 后重试。";
+"Connecting to download server…" = "正在连接下载服务器…";
+"Download complete. Processing app…" = "下载完成，正在处理应用…";
+"Waiting for data" = "等待数据";
+"Downloading" = "正在下载";
+"Preparing update and device connection…" = "正在准备更新并连接设备…";
