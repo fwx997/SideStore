@@ -274,7 +274,7 @@ jobs:
           if-no-files-found: error
 
   picker_preview:
-    if: ${{ !inputs.checks_only && inputs.reuse_build_run != '' && !inputs.rebuild_sidestore }}
+    if: ${{ !inputs.checks_only && !inputs.package_only && inputs.reuse_build_run != '' && !inputs.rebuild_sidestore }}
     runs-on: ${{ inputs.runner || 'xcode-27' }}
     timeout-minutes: 30
     continue-on-error: true
