@@ -244,6 +244,7 @@ jobs:
             LiveContainer-build/build.log
             LiveContainer-build/build/companion-picker-preview/*.png
             LiveContainer-build/build/companion-picker-preview/*.json
+            LiveContainer-build/build/companion-picker-preview/*.txt
             SideInstaller-build/sideinstaller-build.log
             reused-build.json
 
