@@ -159,7 +159,7 @@ jobs:
         if: ${{ inputs.reuse_build_run == '' }}
         working-directory: SideInstaller-build
         env:
-          VERSION: 2.2.0
+          VERSION: 2.3.0
         run: |
           set -o pipefail
           export BUILD_NUMBER="$(date -u +%Y%m%d).$GITHUB_RUN_NUMBER"
