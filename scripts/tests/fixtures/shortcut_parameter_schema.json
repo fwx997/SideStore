@@ -1,0 +1,65 @@
+{
+  "provenance": {
+    "compiler": "https://github.com/electrikmilk/cherri",
+    "revision": "98d5191ae121a6bcf663ed0e55495f4ee4c7a6e2",
+    "compiled_sha256": "a4295c3815463c0c59ddc6176f39f8b90b0a46d39376a2b06a83c5665557cc5e",
+    "note": "Compiled independent text/number dictionary comparisons and text notification; only action UUID/display names removed."
+  },
+  "parameters": {
+    "text_condition": {
+      "WFCondition": 4,
+      "WFInput": {
+        "Type": "Variable",
+        "Variable": {
+          "Value": {
+            "Aggrandizements": [
+              {
+                "CoercionItemClass": "WFStringContentItem",
+                "Type": "WFCoercionVariableAggrandizement"
+              }
+            ],
+            "Type": "ActionOutput"
+          },
+          "WFSerializationType": "WFTextTokenAttachment"
+        }
+      },
+      "WFConditionalActionString": "pending"
+    },
+    "number_condition": {
+      "WFCondition": 4,
+      "WFInput": {
+        "Type": "Variable",
+        "Variable": {
+          "Value": {
+            "Aggrandizements": [
+              {
+                "CoercionItemClass": "WFNumberContentItem",
+                "Type": "WFCoercionVariableAggrandizement"
+              }
+            ],
+            "Type": "ActionOutput"
+          },
+          "WFSerializationType": "WFTextTokenAttachment"
+        }
+      },
+      "WFNumberValue": 1
+    },
+    "text_reference": {
+      "Value": {
+        "attachmentsByRange": {
+          "{0, 1}": {
+            "Aggrandizements": [
+              {
+                "CoercionItemClass": "WFStringContentItem",
+                "Type": "WFCoercionVariableAggrandizement"
+              }
+            ],
+            "Type": "ActionOutput"
+          }
+        },
+        "string": "￼"
+      },
+      "WFSerializationType": "WFTextTokenString"
+    }
+  }
+}

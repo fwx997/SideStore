@@ -53,6 +53,9 @@ class WorkflowExecution:
         if "Variable" in token:
             return self.value(token["Variable"])
         data = token["Value"]
+        if token.get("WFSerializationType") == "WFTextTokenString":
+            reference = data["attachmentsByRange"]["{0, 1}"]
+            return str(self.value({"Value": reference}))
         if data["Type"] == "ActionOutput":
             return self.outputs[data["OutputUUID"]]
         return self.variables[data["VariableName"]]
@@ -60,7 +63,7 @@ class WorkflowExecution:
     def control(self, index, name, values):
         group, mode = values["GroupingIdentifier"], values["WFControlFlowMode"]
         if name == "conditional" and mode == 0:
-            expected = values.get("WFTextValue", values.get("WFNumberValue"))
+            expected = values.get("WFConditionalActionString", values.get("WFNumberValue"))
             return index + 1 if self.value(values["WFInput"]) == expected else self.groups[group][2] + 1
         if name == "repeat.count" and mode == 0:
             self.loops[group] = values["WFRepeatCount"]
@@ -176,6 +179,34 @@ class RefreshShortcutFileTests(unittest.TestCase):
         original["WFWorkflowActions"].append(builder.action("sendmessage"))
         with self.assertRaisesRegex(ValueError, "individual review"):
             builder.optimize(original, name="Phone", minimum_build="test")
+
+    def test_import_parameters_match_independently_compiled_shortcuts_schema(self):
+        fixture_path = Path(__file__).parent / "fixtures/shortcut_parameter_schema.json"
+        schema = json.loads(fixture_path.read_text(encoding="utf-8"))["parameters"]
+        actions = self.prepared()["WFWorkflowActions"]
+        conditions = [item["WFWorkflowActionParameters"] for item in actions
+                      if item["WFWorkflowActionIdentifier"] == builder.PREFIX + "conditional"
+                      and item["WFWorkflowActionParameters"]["WFControlFlowMode"] == 0]
+        for parameters, key in zip(conditions, ("text_condition", "number_condition")):
+            selected = {name: parameters[name] for name in schema[key]}
+            self.assertEqual(normalize_references(selected), schema[key])
+            self.assertNotIn("WFTextValue", parameters)
+        query = next(item["WFWorkflowActionParameters"] for item in actions
+                     if item["WFWorkflowActionIdentifier"].endswith(".GetRefreshResultIntent"))
+        notification = actions[-1]["WFWorkflowActionParameters"]
+        self.assertEqual(normalize_references(query["requestID"]), schema["text_reference"])
+        self.assertEqual(normalize_references(notification["WFNotificationActionBody"]), schema["text_reference"])
+        self.assertEqual(query["requestID"]["Value"]["string"], "\ufffc")
+        self.assertEqual(query["requestID"]["Value"]["attachmentsByRange"]["{0, 1}"]["OutputName"], "requestID")
+
+
+def normalize_references(value):
+    if isinstance(value, list):
+        return [normalize_references(item) for item in value]
+    if isinstance(value, dict):
+        return {key: normalize_references(item) for key, item in value.items()
+                if key not in ("OutputName", "OutputUUID")}
+    return value
 
 
 if __name__ == "__main__":

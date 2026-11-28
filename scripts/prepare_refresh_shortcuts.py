@@ -27,9 +27,20 @@ def action(name, **parameters):
             "WFWorkflowActionParameters": {"UUID": identifier(), **parameters}}
 
 
-def output_of(item):
-    return {"Value": {"Type": "ActionOutput", "OutputUUID": item["WFWorkflowActionParameters"]["UUID"],
-                      "OutputName": "结果"}, "WFSerializationType": "WFTextTokenAttachment"}
+def output_of(item, content_type=None):
+    values = item["WFWorkflowActionParameters"]
+    reference = {"Type": "ActionOutput", "OutputUUID": values["UUID"],
+                 "OutputName": values.get("CustomOutputName", "结果")}
+    if content_type is not None:
+        reference["Aggrandizements"] = [{"Type": "WFCoercionVariableAggrandizement",
+                                        "CoercionItemClass": content_type}]
+    return {"Value": reference, "WFSerializationType": "WFTextTokenAttachment"}
+
+
+def text_output_of(item):
+    reference = output_of(item, "WFStringContentItem")["Value"]
+    return {"Value": {"string": "\ufffc", "attachmentsByRange": {"{0, 1}": reference}},
+            "WFSerializationType": "WFTextTokenString"}
 
 
 def result_variable():
@@ -38,7 +49,8 @@ def result_variable():
 
 
 def field(name):
-    return action("getvalueforkey", WFDictionaryKey=name, WFInput=result_variable())
+    return action("getvalueforkey", WFDictionaryKey=name, WFGetDictionaryValueType="Value",
+                  CustomOutputName=name, WFInput=result_variable())
 
 
 def remember_result(item):
@@ -48,9 +60,10 @@ def remember_result(item):
 
 
 def condition(item, *, text=None, number=None):
-    values = {"WFTextValue": text} if text is not None else {"WFNumberValue": number}
+    values = {"WFConditionalActionString": text} if text is not None else {"WFNumberValue": number}
+    content_type = "WFStringContentItem" if text is not None else "WFNumberContentItem"
     return action("conditional", GroupingIdentifier=identifier(), WFControlFlowMode=0, WFCondition=4,
-                  WFInput={"Type": "Variable", "Variable": output_of(item)}, **values)
+                  WFInput={"Type": "Variable", "Variable": output_of(item, content_type)}, **values)
 
 
 def end_group(start):
@@ -93,7 +106,7 @@ def optimize(shortcut, *, name, minimum_build, checks=18, interval=10):
     request = field("requestID")
     query = {"WFWorkflowActionIdentifier": descriptor["BundleIdentifier"] + ".GetRefreshResultIntent",
              "WFWorkflowActionParameters": {"UUID": identifier(), "AppIntentDescriptor": descriptor,
-                                             "requestID": output_of(request), "ShowWhenRun": False}}
+                                             "requestID": text_output_of(request), "ShowWhenRun": False}}
     repeat = action("repeat.count", WFRepeatCount=checks, GroupingIdentifier=identifier(), WFControlFlowMode=0)
     status = field("status")
     pending = condition(status, text="pending")
@@ -112,7 +125,7 @@ def optimize(shortcut, *, name, minimum_build, checks=18, interval=10):
         *remember_result(query), end_group(pending), end_group(repeat),
         disconnect_allowed, cleanup,
         action("vpn.set", WFVPN=deepcopy(vpn), WFVPNOperation="Disconnect"), end_group(cleanup),
-        message, action("notification", WFNotificationActionBody=output_of(message),
+        message, action("notification", WFNotificationActionBody=text_output_of(message),
                         WFNotificationActionTitle="SideStore 续签结果", WFNotificationActionSound=False),
     ]
     return result
