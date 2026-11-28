@@ -1947,6 +1947,7 @@
 "VPN is not connected. Open your local VPN app and connect it, then return and retry. You can choose the app in Settings > VPN Auto-Open." = "尚未开启 VPN。请打开本地 VPN 应用并连接，然后返回重试。可在“设置 → VPN 自动跳转”中选择要打开的应用。";
 "Connect your local VPN and retry. Background shortcuts will not open the VPN app automatically." = "请连接本地 VPN 后重试。快捷指令在后台刷新时不会自动打开 VPN 应用。";
 "Could not transfer files to the device. Check the local VPN connection and pairing file, then try again. Technical details are available in the error log." = "无法向设备传输文件。请检查本地 VPN 连接和配对文件后重试，技术详情可在错误日志中查看。";
+"iOS requires a recent device unlock before refreshing apps. Unlock the device, return to SideStore and retry the refresh." = "iOS 要求设备近期解锁后才能续签。请先解锁设备，再返回 SideStore 重试续签。";
 
 /* Signing capabilities */
 "Apple did not grant Increased Memory Limit for %@. Refresh stopped before replacing its provisioning profile." = "Apple 未授予 %@ 增加内存上限权限。已停止续签，保留当前描述文件。";

@@ -84,9 +84,13 @@ final class CellularRefreshManager {
 extension UserDefaults {
     var enableEMPforWireguard: Bool { bool(forKey: "test.wireguard") }
 }
+enum PairingProtocol { case rppairing, lockdown }
 enum MinimuxerError: Error {
-    case noVPN
-    var asOperationError: OperationError { .noVPN(reason: "Low-level technical detail") }
+    case noDevice(String), noConnection(String), notReachable(String), noVPN(String)
+    case invalidVPN(String), notStarted(String), pairingNotLoaded(String)
+    case connectionModeNotConfigured(String)
+    case invalidPairing(protocol: PairingProtocol, reason: String)
+    var description: String { "Synthetic minimuxer error" }
 }
 enum TransportFailure: Error { case RwAfc, pairing }
 func debugLog(_ message: String) {}
@@ -214,7 +218,7 @@ final class PipelineRunner {
             }
         }
         CellularRefreshManager.shared.isEnabled = false
-        minimuxer.core.readiness = .failure(.noVPN)
+        minimuxer.core.readiness = .failure(.noVPN("Low-level technical detail"))
         do {
             _ = try await runner.perform([AppOperation()], handler: handler, group: RefreshGroup())
             preconditionFailure("A background failure must still propagate")
@@ -494,6 +498,21 @@ final class PipelineRunner {
         } catch OperationError.deviceConnectionFailed { }
         do { _ = try await withDeviceConnection { throw TransportFailure.pairing } }
         catch TransportFailure.pairing { }
+        let unlockReason = "The device has not been unlocked recently"
+        do {
+            _ = try await withDeviceConnection {
+                throw MinimuxerError.invalidPairing(protocol: .rppairing, reason: unlockReason)
+            }
+            preconditionFailure("Expected a recent-unlock requirement")
+        } catch OperationError.deviceUnlockRequired(let reason) {
+            precondition(reason == unlockReason)
+        }
+        minimuxer.core.readiness = .failure(.invalidPairing(protocol: .rppairing, reason: unlockReason))
+        do {
+            try await ensureMinimuxerReady()
+            preconditionFailure("Readiness must report the recent-unlock requirement")
+        } catch OperationError.deviceUnlockRequired { }
+        minimuxer.core.readiness = .success(true)
         // Drop the tunnel during an interactive operation: report failure, never
         // leave cellular restoration to open another app midway through transfer.
         try await VPNOperationContext.withOperation(isInteractive: true) {
@@ -548,7 +567,8 @@ def production_source():
         manager = manager.replace(original, replacement)
     pieces = [harness, (device / "VPNAppPreferences.swift").read_text(encoding="utf-8"),
               manager,
-              (ROOT / "SideStore/Core/Operations/Errors/OperationError.swift").read_text(encoding="utf-8")]
+              (ROOT / "SideStore/Core/Operations/Errors/OperationError.swift").read_text(encoding="utf-8"),
+              declaration(wrapper, "extension MinimuxerError {")]
     for signature in ("public func isMinimuxerReady()", "public func ensureMinimuxerReady()", "private func withDeviceConnection<T>"):
         pieces.append(declaration(wrapper, signature).replace("public func", "func"))
     return "\n".join(pieces)

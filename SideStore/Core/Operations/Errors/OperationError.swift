@@ -45,6 +45,18 @@ public enum OperationError: LocalizedError, CustomNSError, Sendable, Equatable {
     case pledgeInactive(appName: String)
     case SideJITIssue(error: String)
     case unknownUDID(reason: String)
+    case deviceUnlockRequired(reason: String)
+
+    static func requiresRecentDeviceUnlock(_ reason: String) -> Bool {
+        if reason.localizedCaseInsensitiveContains("The device has not been unlocked recently") {
+            return true
+        }
+        guard reason.contains("com.apple.dt.RemotePairingError") else { return false }
+        // The device gateway currently flattens the Remote Pairing response to text.
+        let response = reason.replacingOccurrences(of: "\\", with: "")
+        return response.range(of: #"\bcode"?\s*[:=]\s*(?:Integer\(\s*)?1016\b"#,
+                              options: [.regularExpression, .caseInsensitive]) != nil
+    }
 
     public static var cancelled: CancellationError { CancellationError() }
 
@@ -66,6 +78,8 @@ public enum OperationError: LocalizedError, CustomNSError, Sendable, Equatable {
             return "The operation returned an unknown result."
         case .remotePairingRequired:
             return "The current local VPN connection cannot use Lockdown pairing on this system. Open Settings > Pairing File Management and import a Remote Pairing file, or create one with Wireless Pairing. Then restart the app and try again. Keep LocalDevVPN connected."
+        case .deviceUnlockRequired:
+            return "iOS requires a recent device unlock before refreshing apps. Unlock the device, return to SideStore and retry the refresh."
 
         case .cacheClearError(let errors):
             return "An error occurred while clearing the cache: \(errors.joined(separator: "\n"))"

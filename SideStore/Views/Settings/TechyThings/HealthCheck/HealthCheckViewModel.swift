@@ -227,7 +227,7 @@ final class HealthCheckViewModel: ObservableObject {
                 pairingSat = nil
                 ddiSat = nil
             case .invalidPairing:
-                pairingSat = false
+                pairingSat = error.requiresRecentUnlock ? nil : false
                 ddiSat = nil
             case .mount:
                 ddiSat = false

@@ -242,11 +242,19 @@ private func withDeviceConnection<T>(_ operation: () async throws -> T) async th
     do {
         return try await withRemotePairingRetry(operation)
     } catch {
+        if let error = error as? MinimuxerError, error.requiresRecentUnlock {
+            throw error.asOperationError
+        }
         throw VPNAppManager.connectionError(error)
     }
 }
 
 extension MinimuxerError {
+    var requiresRecentUnlock: Bool {
+        guard case .invalidPairing(.rppairing, let reason) = self else { return false }
+        return OperationError.requiresRecentDeviceUnlock(reason)
+    }
+
     var asOperationError: OperationError {
         switch self {
         case .noDevice(let reason):             return .noDevice(reason: reason)
@@ -256,6 +264,8 @@ extension MinimuxerError {
         case .invalidVPN(let reason) where reason.contains("no ipsec/IKEv2 interface found"):
             return .remotePairingRequired
         case .invalidVPN(let reason):           return .invalidVPN(reason: reason)
+        case .invalidPairing(_, let reason) where requiresRecentUnlock:
+            return .deviceUnlockRequired(reason: reason)
         case .invalidPairing(_, let reason):    return .invalidPairingFile(reason: reason)
         case .notStarted(let reason):           return .minimuxerNotStarted(reason: reason)
         case .pairingNotLoaded(let reason):            return .pairingNotComplete(reason: reason)

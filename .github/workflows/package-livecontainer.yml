@@ -160,9 +160,9 @@ jobs:
         working-directory: SideInstaller-build
         env:
           VERSION: 2.2.0
-          BUILD_NUMBER: 20261124.1
         run: |
           set -o pipefail
+          export BUILD_NUMBER="$(date -u +%Y%m%d).$GITHUB_RUN_NUMBER"
           bash scripts/build-ipa.sh 2>&1 | tee sideinstaller-build.log
       - uses: actions/upload-artifact@v4
         if: ${{ inputs.reuse_build_run == '' }}

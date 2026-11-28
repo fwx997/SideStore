@@ -91,7 +91,7 @@ func minimuxerStart(_ content: String, preferred: PairingProtocol?) async throws
 func fetchUDID(forceLive: Bool) async throws -> String {
     precondition(forceLive)
     Fixture.events.append("device-check")
-    if Fixture.failDevice { throw MinimuxerError.invalidPairing(protocol: .rppairing, reason: "test") }
+    if let error = Fixture.deviceError { throw error }
     return "SYNTHETIC-DEVICE"
 }
 final class AppBootManager {
@@ -99,13 +99,18 @@ final class AppBootManager {
     var needsPairingPrompt = false
 // STARTUP_METHOD
 }
+struct RefreshAttempt {
+    var errorDescription: String?
+// DISPLAY_ERROR
+}
 
 enum Fixture {
     static let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     static var documents = root
     static var started: (any PairingFile)?
     static var failStart = false
-    static var failDevice = false
+    static var deviceError: MinimuxerError?
+    static let unlockReason = #"Handshake failed: UnexpectedResponse(\"missing createListener.port in response: Dictionary({\"errorExtended\": Dictionary({\"code\": Integer(1016), \"domain\": String(\"com.apple.dt.RemotePairingError\"), \"userInfo\": Dictionary({\"NSLocalizedDescription\": String(\"The device has not been unlocked recently\")})})})\")"#
     static var events: [String] = []
     static var number = 0
     static let manager = PairingFileManager.shared
@@ -142,7 +147,7 @@ enum Fixture {
         minimuxer.network.isIKEv2IPSecAvailable = false
         started = nil
         failStart = false
-        failDevice = false
+        deviceError = nil
         events = []
         AppBootManager.shared.needsPairingPrompt = false
         print("case: " + name)
@@ -179,6 +184,7 @@ struct PairingRegression {
         try preservedModes()
         try await startup()
         errorMapping()
+        historicalErrors()
         print("Pairing selection and startup regression passed")
     }
     static func importedFiles() throws {
@@ -295,18 +301,56 @@ struct PairingRegression {
         precondition(Fixture.events == ["start"])
 
         try Fixture.reset("real pairing validation errors still fail startup")
-        Fixture.failDevice = true
+        Fixture.deviceError = .invalidPairing(protocol: .rppairing, reason: "test")
         do {
             try await AppBootManager.shared.startMinimuxer(pairingFile: Fixture.content(Fixture.remote))
             preconditionFailure("Expected device verification failure")
         } catch MinimuxerError.invalidPairing {}
         precondition(AppBootManager.shared.needsPairingPrompt)
+
+        try Fixture.reset("recent-unlock requirement keeps pairing available for manual retry")
+        try Fixture.write(Fixture.remote, mode: .rppairing)
+        let savedPairing = Fixture.manager.fetchPairingFile(for: .rppairing)
+        AppBootManager.shared.needsPairingPrompt = true
+        Fixture.deviceError = .invalidPairing(protocol: .rppairing, reason: Fixture.unlockReason)
+        try await AppBootManager.shared.startMinimuxer(pairingFile: Fixture.content(Fixture.remote))
+        precondition(!AppBootManager.shared.needsPairingPrompt)
+        precondition(!UserDefaults.standard.isPairingReset)
+        precondition(Fixture.manager.persistedActiveProtocol == .rppairing)
+        precondition(Fixture.manager.fetchPairingFile(for: .rppairing) == savedPairing)
+        precondition(Fixture.events == ["start", "endpoint", "device-check"])
+        Fixture.deviceError = nil
+        try await AppBootManager.shared.startMinimuxer(pairingFile: Fixture.content(Fixture.remote))
+        precondition(!AppBootManager.shared.needsPairingPrompt)
     }
     static func errorMapping() {
         let mismatch = MinimuxerError.invalidVPN("utun is present but no ipsec/IKEv2 interface found — LocalDevVPN may not support the lockdown protocol on iOS 26.4+")
         precondition(mismatch.asOperationError == .remotePairingRequired)
         precondition(MinimuxerError.invalidVPN("TCP port poll failed").asOperationError == .invalidVPN(reason: "TCP port poll failed"))
         precondition(MinimuxerError.noVPN("VPN disconnected").asOperationError == .noVPN(reason: "VPN disconnected"))
+        let unlock = MinimuxerError.invalidPairing(protocol: .rppairing, reason: Fixture.unlockReason)
+        precondition(unlock.asOperationError == .deviceUnlockRequired(reason: Fixture.unlockReason))
+        precondition(unlock.asOperationError.rawDescription.count < 200)
+        precondition(unlock.asOperationError.recoverySuggestion == nil)
+        for reason in ["The device has not been unlocked recently", #"Dictionary({\"code\": Integer(1016), \"domain\": String(\"com.apple.dt.RemotePairingError\")})"#,
+                       "Error Domain=com.apple.dt.RemotePairingError Code=1016"] {
+            precondition(OperationError.requiresRecentDeviceUnlock(reason))
+        }
+        for reason in ["code: 1016", "error 1016 while reading data", "Unlock required", "com.apple.dt.RemotePairingError code: 10160",
+                       "com.apple.dt.RemotePairingError code: 1001; requestID 1016"] {
+            precondition(!OperationError.requiresRecentDeviceUnlock(reason))
+            precondition(MinimuxerError.invalidPairing(protocol: .rppairing, reason: reason).asOperationError == .invalidPairingFile(reason: reason))
+        }
+        precondition(!MinimuxerError.invalidPairing(protocol: .lockdown, reason: Fixture.unlockReason).requiresRecentUnlock)
+    }
+    static func historicalErrors() {
+        let original = "The current pairing file is invalid. Reason: " + Fixture.unlockReason
+        let attempt = RefreshAttempt(errorDescription: original)
+        precondition(attempt.displayErrorDescription == OperationError.deviceUnlockRequired(reason: original).localizedDescription)
+        precondition(attempt.errorDescription == original)
+        precondition(RefreshAttempt(errorDescription: nil).displayErrorDescription == nil)
+        let session = "Your session has expired. Please log in. (-1)"
+        precondition(RefreshAttempt(errorDescription: session).displayErrorDescription == session)
     }
 }
 '''
@@ -338,8 +382,10 @@ def production_harness(common=None):
     wrapper = (ROOT / "SideStore/Core/DeviceApi/MinimuxerWrapper.swift").read_text(encoding="utf-8")
     error_mapping = declaration(wrapper, "extension MinimuxerError {")
     errors = (ROOT / "SideStore/Core/Operations/Errors/OperationError.swift").read_text(encoding="utf-8")
+    attempt = (ROOT / "AltStore/Core/Model/RefreshAttempt.swift").read_text(encoding="utf-8")
+    display_error = declaration(attempt, "var displayErrorDescription:")
     return "\n".join((parser, "enum AppConstants {" + pairing_constants + "}", manager,
-                      errors, error_mapping, HARNESS.replace("// STARTUP_METHOD", start)))
+                      errors, error_mapping, HARNESS.replace("// STARTUP_METHOD", start).replace("// DISPLAY_ERROR", display_error)))
 
 
 @unittest.skipUnless(SWIFTC, "swiftc is required to execute production pairing selection")

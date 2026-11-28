@@ -58,7 +58,7 @@ private extension RefreshAttemptsViewController
             cell.dateLabel.textColor = .secondaryLabel
             cell.errorDescriptionLabel.textColor = .label
             cell.dateLabel.text = self?.dateFormatter.string(from: attempt.date)
-            cell.errorDescriptionLabel.text = attempt.errorDescription
+            cell.errorDescriptionLabel.text = attempt.displayErrorDescription
             
             if attempt.isSuccess
             {

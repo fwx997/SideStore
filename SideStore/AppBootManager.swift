@@ -52,6 +52,11 @@ public final class AppBootManager {
             debugLog("[AppBootManager] startMinimuxer(): Minimuxer fetchUDID() based connection test SUCCEEDED. UDID: \(deviceUDID)")
             self.needsPairingPrompt = false
         } catch {
+            if let error = error as? MinimuxerError, error.requiresRecentUnlock {
+                self.needsPairingPrompt = false
+                debugLog("[AppBootManager] Device validation needs a recent unlock; keeping the current pairing for retry.")
+                return
+            }
             if case MinimuxerError.invalidPairing = error {
                 debugLog("[AppBootManager] startMinimuxer(): Minimuxer fetchUDID() based connection test FAILED. \(error)")
                 self.needsPairingPrompt = true

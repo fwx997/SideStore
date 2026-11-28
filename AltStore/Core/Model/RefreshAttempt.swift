@@ -16,6 +16,14 @@ public class RefreshAttempt: BaseEntity
     
     @NSManaged public var isSuccess: Bool
     @NSManaged public var errorDescription: String?
+
+    var displayErrorDescription: String? {
+        guard let errorDescription else { return nil }
+        if OperationError.requiresRecentDeviceUnlock(errorDescription) {
+            return OperationError.deviceUnlockRequired(reason: errorDescription).localizedDescription
+        }
+        return errorDescription
+    }
     
     private override init(entity: NSEntityDescription, insertInto context: NSManagedObjectContext?)
     {
