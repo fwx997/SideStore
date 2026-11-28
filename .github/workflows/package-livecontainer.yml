@@ -307,6 +307,7 @@ jobs:
           name: companion-picker-preview
           path: |
             LiveContainer-build/build/companion-picker-preview/*.png
+            LiveContainer-build/build/companion-picker-preview/*.mp4
             LiveContainer-build/build/companion-picker-preview/*.json
             LiveContainer-build/build/companion-picker-preview/*.txt
           if-no-files-found: warn
