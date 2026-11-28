@@ -199,12 +199,6 @@ jobs:
           name: SideStore-${{ env.SIDESTORE_VERSION }}.ipa
           path: SideStore.ipa
           if-no-files-found: error
-      - name: Render the companion picker on iPhone and iPad
-        working-directory: LiveContainer-build
-        run: |
-          if [ -f .github/tests/render_companion_picker.py ]; then
-            python3 .github/tests/render_companion_picker.py --output build/companion-picker-preview --sidestore-ipa ../SideStore.ipa --sideinstaller-ipa ../SideInstaller-build/build/SideInstaller.ipa
-          fi
       - name: Archive LiveContainer
         id: archive_host
         working-directory: LiveContainer-build
@@ -242,9 +236,6 @@ jobs:
           path: |
             build/logs/build.log
             LiveContainer-build/build.log
-            LiveContainer-build/build/companion-picker-preview/*.png
-            LiveContainer-build/build/companion-picker-preview/*.json
-            LiveContainer-build/build/companion-picker-preview/*.txt
             SideInstaller-build/sideinstaller-build.log
             reused-build.json
 
@@ -276,6 +267,44 @@ jobs:
           name: personal-refresh-shortcuts
           path: shortcuts/
           if-no-files-found: error
+
+  picker_preview:
+    if: ${{ !inputs.checks_only && inputs.reuse_build_run != '' && !inputs.rebuild_sidestore }}
+    runs-on: macos-26-intel
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          repository: fwx997/LiveContainer
+          ref: ${{ inputs.livecontainer_ref }}
+          path: LiveContainer-build
+      - uses: maxim-lobanov/setup-xcode@v1.6.0
+        with:
+          xcode-version: '26.6'
+      - name: Reuse verified app icons for the preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REUSE_BUILD_RUN: ${{ inputs.reuse_build_run }}
+          EXPECTED_SIDEINSTALLER: ${{ inputs.sideinstaller_ref }}
+          REBUILD_SIDESTORE: 'false'
+        run: python3 scripts/reuse_combined_artifacts.py
+      - name: Render the production picker on iPhone and iPad
+        working-directory: LiveContainer-build
+        run: python3 .github/tests/render_companion_picker.py --output build/companion-picker-preview --sidestore-ipa ../SideStore.ipa --sideinstaller-ipa ../SideInstaller-build/build/SideInstaller.ipa
+      - name: Upload picker previews and environment diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: companion-picker-preview
+          path: |
+            LiveContainer-build/build/companion-picker-preview/*.png
+            LiveContainer-build/build/companion-picker-preview/*.json
+            LiveContainer-build/build/companion-picker-preview/*.txt
+          if-no-files-found: warn
 
   native_intents:
     if: ${{ inputs.checks_only }}
