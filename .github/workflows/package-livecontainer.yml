@@ -40,6 +40,11 @@ on:
         required: false
         default: false
         type: boolean
+      picker_preview_only:
+        description: Render the companion picker without rebuilding or publishing applications
+        required: false
+        default: false
+        type: boolean
       runner:
         description: Xcode 27 for application builds; Intel is supported only when reusing both prebuilt applications
         required: true
@@ -55,7 +60,7 @@ permissions:
 
 jobs:
   regressions:
-    if: ${{ inputs.checks_only || (!inputs.package_only && (inputs.reuse_build_run == '' || inputs.rebuild_sidestore)) }}
+    if: ${{ !inputs.picker_preview_only && (inputs.checks_only || (!inputs.package_only && (inputs.reuse_build_run == '' || inputs.rebuild_sidestore))) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -76,7 +81,7 @@ jobs:
         if: ${{ inputs.checks_only }}
         run: python3 -m unittest discover -s LiveContainer-build/.github/tests -p 'test_sideinstaller_*.py' -v
   package:
-    if: ${{ !inputs.checks_only }}
+    if: ${{ !inputs.checks_only && !inputs.picker_preview_only }}
     runs-on: ${{ inputs.runner || 'xcode-27' }}
     timeout-minutes: 120
     steps:
@@ -270,8 +275,8 @@ jobs:
 
   picker_preview:
     if: ${{ !inputs.checks_only && inputs.reuse_build_run != '' && !inputs.rebuild_sidestore }}
-    runs-on: macos-26-intel
-    timeout-minutes: 20
+    runs-on: ${{ inputs.runner || 'xcode-27' }}
+    timeout-minutes: 30
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
@@ -284,7 +289,7 @@ jobs:
           path: LiveContainer-build
       - uses: maxim-lobanov/setup-xcode@v1.6.0
         with:
-          xcode-version: '26.6'
+          xcode-version: ${{ inputs.runner == 'macos-26-intel' && '26.6' || '27.2' }}
       - name: Reuse verified app icons for the preview
         env:
           GH_TOKEN: ${{ github.token }}
