@@ -199,6 +199,12 @@ jobs:
           name: SideStore-${{ env.SIDESTORE_VERSION }}.ipa
           path: SideStore.ipa
           if-no-files-found: error
+      - name: Render the companion picker on iPhone and iPad
+        working-directory: LiveContainer-build
+        run: |
+          if [ -f .github/tests/render_companion_picker.py ]; then
+            python3 .github/tests/render_companion_picker.py --output build/companion-picker-preview --sidestore-ipa ../SideStore.ipa --sideinstaller-ipa ../SideInstaller-build/build/SideInstaller.ipa
+          fi
       - name: Archive LiveContainer
         id: archive_host
         working-directory: LiveContainer-build
@@ -236,6 +242,8 @@ jobs:
           path: |
             build/logs/build.log
             LiveContainer-build/build.log
+            LiveContainer-build/build/companion-picker-preview/*.png
+            LiveContainer-build/build/companion-picker-preview/*.json
             SideInstaller-build/sideinstaller-build.log
             reused-build.json
 
