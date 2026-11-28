@@ -297,9 +297,9 @@ jobs:
           EXPECTED_SIDEINSTALLER: ${{ inputs.sideinstaller_ref }}
           REBUILD_SIDESTORE: 'false'
         run: python3 scripts/reuse_combined_artifacts.py
-      - name: Render the production picker on iPhone and iPad
+      - name: Render the production picker on iPhone
         working-directory: LiveContainer-build
-        run: python3 .github/tests/render_companion_picker.py --output build/companion-picker-preview --sidestore-ipa ../SideStore.ipa --sideinstaller-ipa ../SideInstaller-build/build/SideInstaller.ipa
+        run: python3 .github/tests/render_companion_picker.py --family iPhone --output build/companion-picker-preview --sidestore-ipa ../SideStore.ipa --sideinstaller-ipa ../SideInstaller-build/build/SideInstaller.ipa
       - name: Upload picker previews and environment diagnostics
         if: always()
         uses: actions/upload-artifact@v4
